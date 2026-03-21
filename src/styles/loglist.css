@@ -1,0 +1,55 @@
+/* LogList.css */
+
+.log-list {
+  margin-top: 20px;
+  max-height: 350px;
+  overflow-y: auto;
+
+  background: #181818;
+  border-radius: 10px;
+  padding: 20px 50px;
+}
+
+/* each log item */
+.log-item {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  font-size: 14px;
+  color: #e0e0e0;
+
+  border-left: 5px solid transparent;
+}
+
+/* message */
+.log-item p {
+  margin: 0;
+}
+
+/* timestamp */
+.log-item span {
+  font-size: 12px;
+  color: #aaa;
+}
+
+/* LEVEL COLORS (Grafana style) */
+
+.log-item.INFO {
+  border-left: 5px solid #4dabf7;
+  background-color: #1a2633;
+}
+
+.log-item.WARN {
+  border-left: 5px solid #f59f00;
+  background-color: #332a1a;
+}
+
+.log-item.ERROR {
+  border-left: 5px solid #fa5252;
+  background-color: #331a1a;
+}
