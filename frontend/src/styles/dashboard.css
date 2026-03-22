@@ -1,0 +1,21 @@
+/* ── Dashboard layout ── */
+.dashboard-container {
+  background-color: var(--bg-base);
+  min-height: 100vh;
+  color: var(--text-primary);
+}
+
+.dashboard-content {
+  padding: 24px 32px 48px;
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+@media (max-width: 768px) {
+  .dashboard-content {
+    padding: 16px 16px 40px;
+  }
+}

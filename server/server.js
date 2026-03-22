@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
@@ -15,9 +16,11 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
-mongoose.connect("mongodb://127.0.0.1:27017/logs")
-.then(() => console.log("✅ MongoDB connected"))
-.catch(err => console.error("❌ MongoDB connection error:", err));
+const MONGO_URI = `mongodb://${process.env.MONGO_USERNAME}:${process.env.MONGO_PASSWORD}@${process.env.MONGO_HOST}/?${process.env.MONGO_OPTIONS}`;
+
+mongoose.connect(MONGO_URI)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch(err => console.error("❌ MongoDB connection error:", err));
 ;
 
 const LogSchema = new mongoose.Schema({
@@ -28,7 +31,7 @@ const LogSchema = new mongoose.Schema({
   },
   level: {
     type: String,
-    enum: ["info", "warn", "error", "debug"],
+    enum: ["INFO", "WARN", "ERROR", "DEBUG"],
     required: true,
   },
   message: {
@@ -91,6 +94,7 @@ io.on("connection", (socket) => {
   console.log("⚡ Client connected:", socket.id);
 });
 
-server.listen(4000, () => {
-  console.log("Log server running on 4000");
+const PORT = process.env.PORT || 4000;
+server.listen(PORT, () => {
+  console.log(`Log server running on ${PORT}`);
 });
