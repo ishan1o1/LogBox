@@ -3,6 +3,8 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const http = require("http")
 const { Server } = require("socket.io");
+const {addLog} = require("../services/logBuffer");
+const Log = require("../models/Log")
 
 const app = express();
 
@@ -20,36 +22,12 @@ mongoose.connect("mongodb://127.0.0.1:27017/logs")
 .catch(err => console.error("❌ MongoDB connection error:", err));
 ;
 
-const LogSchema = new mongoose.Schema({
-  service: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  level: {
-    type: String,
-    enum: ["info", "warn", "error", "debug"],
-    required: true,
-  },
-  message: {
-    type: String,
-    required: true,
-  },
-  timestamp: {
-    type: Date,
-    default: Date.now,
-    expires: 60 * 60 * 24 * 7, 
-  },
-  meta: {
-    type: Object,
-    default: {},
-  },
-});
-const Log = mongoose.model("Log", LogSchema);
+
 
 app.post("/log", async (req, res) => {
   try {
-    const log = await Log.create(req.body);
+    const log = req.body;
+    addLog(log);
     io.emit("new-log",log);
     res.json({ status: "stored" });
   } catch (err) {
