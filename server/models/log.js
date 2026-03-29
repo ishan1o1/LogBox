@@ -18,7 +18,7 @@ const LogSchema = new mongoose.Schema({
   timestamp: {
     type: Date,
     default: Date.now,
-    expires: 60 * 60 * 24 * 7, // 7 days TTL
+    expires: 604800, // 7 days TTL
   },
   meta: {
     type: Object,

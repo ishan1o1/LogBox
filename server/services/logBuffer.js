@@ -1,4 +1,4 @@
-const Log = require("./models/Log");
+const Log = require("../models/log");
 
 let logBuffer = [];
 const BATCH_SIZE = 50;

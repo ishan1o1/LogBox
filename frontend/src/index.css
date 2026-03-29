@@ -1,0 +1,124 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ══════════════════════════════════════
+   DARK THEME (default)
+══════════════════════════════════════ */
+:root,
+[data-theme="dark"] {
+  --bg-base:       #0b0d12;
+  --bg-surface:    #13161e;
+  --bg-elevated:   #1a1d27;
+
+  --border:        #2a2e3d;
+  --border-subtle: #1e2130;
+
+  --text-primary:  #e8eaf0;
+  --text-secondary:#9399ab;
+  --text-muted:    #5a6075;
+
+  --accent-blue:   #4dabf7;
+  --accent-yellow: #f59f00;
+  --accent-red:    #fa5252;
+  --accent-green:  #51cf66;
+
+  --blue-bg:    rgba(77, 171, 247, 0.1);
+  --yellow-bg:  rgba(245, 159, 0, 0.1);
+  --red-bg:     rgba(250, 82, 82, 0.1);
+
+  --accent-debug: #a855f7;
+  --debug-bg:     rgba(168, 85, 247, 0.1);
+
+  --blue-border:   rgba(77, 171, 247, 0.6);
+  --yellow-border: rgba(245, 159, 0, 0.6);
+  --red-border:    rgba(250, 82, 82, 0.6);
+
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 20px rgba(0,0,0,0.5);
+  --shadow-lg: 0 8px 40px rgba(0,0,0,0.6);
+
+  /* Toggle button */
+  --toggle-bg:     #1a1d27;
+  --toggle-border: #2a2e3d;
+  --toggle-icon:   '☀️';
+}
+
+/* ══════════════════════════════════════
+   LIGHT THEME
+══════════════════════════════════════ */
+[data-theme="light"] {
+  --bg-base:       #f0f2f7;
+  --bg-surface:    #ffffff;
+  --bg-elevated:   #f7f8fc;
+
+  --border:        #d8dce8;
+  --border-subtle: #e8ebf2;
+
+  --text-primary:  #1a1d2e;
+  --text-secondary:#5a6075;
+  --text-muted:    #9399ab;
+
+  --accent-blue:   #2b8fef;
+  --accent-yellow: #d98e00;
+  --accent-red:    #e03535;
+  --accent-green:  #2fa84f;
+
+  --blue-bg:    rgba(43, 143, 239, 0.08);
+  --yellow-bg:  rgba(217, 142, 0, 0.08);
+  --red-bg:     rgba(224, 53, 53, 0.08);
+
+  --accent-debug: #9333ea;
+  --debug-bg:     rgba(147, 51, 234, 0.08);
+
+  --blue-border:   rgba(43, 143, 239, 0.5);
+  --yellow-border: rgba(217, 142, 0, 0.5);
+  --red-border:    rgba(224, 53, 53, 0.5);
+
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 20px rgba(0,0,0,0.1);
+  --shadow-lg: 0 8px 40px rgba(0,0,0,0.12);
+
+  --toggle-bg:     #e8ebf2;
+  --toggle-border: #d8dce8;
+  --toggle-icon:   '🌙';
+}
+
+/* ══════════════════════════════════════
+   Shared tokens (theme-agnostic)
+══════════════════════════════════════ */
+:root {
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --transition: 0.2s ease;
+}
+
+/* ══════════════════════════════════════
+   Reset & base
+══════════════════════════════════════ */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent-blue);
+  text-decoration: none;
+  transition: opacity var(--transition);
+}
+
+a:hover {
+  opacity: 0.8;
+}
