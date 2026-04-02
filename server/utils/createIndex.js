@@ -13,12 +13,18 @@ const createLogsIndex = async () => {
             level: { type: "keyword" },
             source: { type: "keyword" },
             service: { type: "keyword" },
+            route: { type: "keyword" },
+            method: { type: "keyword" },
             endpoint: { type: "keyword" },
             message: { type: "text" },
             statusCode: { type: "integer" },
             errorType: { type: "keyword" },
             traceId: { type: "keyword" },
-          },
+            requestId: { type: "keyword" },
+            deploymentId: { type: "keyword" },
+            responseTime: { type: "integer" },
+            environment: { type: "keyword" }
+          }
         },
       });
 

@@ -7,6 +7,14 @@ const CONCURRENCY = 50;
 const SERVICES = [
   {
     name: "auth-service",
+    routes: ["/api/login", "/api/logout", "/api/refresh-token", "/api/change-password", "/api/oauth/callback"],
+    methods: ["POST", "GET"],
+    statusCodes: {
+      INFO: [200, 201],
+      WARN: [401, 429],
+      ERROR: [400, 401, 403, 500, 503],
+      DEBUG: [200]
+    },
     levelWeights: { INFO: 50, WARN: 25, ERROR: 20, DEBUG: 5 },
     messages: {
       INFO:  ["User login successful", "Token issued", "Session refreshed", "User logged out", "Password changed"],
@@ -15,8 +23,17 @@ const SERVICES = [
       DEBUG: ["JWT payload decoded", "Session store hit", "CSRF token validated"],
     },
   },
+
   {
     name: "payment-service",
+    routes: ["/api/payments/initiate", "/api/payments/verify", "/api/refunds", "/api/invoices", "/api/subscriptions/renew"],
+    methods: ["POST", "GET"],
+    statusCodes: {
+      INFO: [200, 201],
+      WARN: [202, 429],
+      ERROR: [400, 402, 500, 502, 504],
+      DEBUG: [200]
+    },
     levelWeights: { INFO: 40, WARN: 20, ERROR: 30, DEBUG: 10 },
     messages: {
       INFO:  ["Payment processed successfully", "Refund initiated", "Invoice generated", "Subscription renewed", "Payout scheduled"],
@@ -25,8 +42,17 @@ const SERVICES = [
       DEBUG: ["Stripe API called", "Idempotency key set", "Currency conversion applied"],
     },
   },
+
   {
     name: "order-service",
+    routes: ["/api/orders", "/api/orders/confirm", "/api/orders/ship", "/api/orders/cancel", "/api/orders/status"],
+    methods: ["POST", "GET", "PUT"],
+    statusCodes: {
+      INFO: [200, 201],
+      WARN: [202, 409],
+      ERROR: [400, 404, 500, 503],
+      DEBUG: [200]
+    },
     levelWeights: { INFO: 60, WARN: 15, ERROR: 15, DEBUG: 10 },
     messages: {
       INFO:  ["Order placed", "Order confirmed", "Order shipped", "Order delivered", "Order cancelled by user"],
@@ -35,8 +61,17 @@ const SERVICES = [
       DEBUG: ["Cart serialised", "Promo code validated", "Tax calculation complete"],
     },
   },
+
   {
     name: "notification-service",
+    routes: ["/api/notifications/email", "/api/notifications/sms", "/api/notifications/push", "/api/notifications/digest"],
+    methods: ["POST"],
+    statusCodes: {
+      INFO: [200, 202],
+      WARN: [429],
+      ERROR: [500, 502, 503],
+      DEBUG: [200]
+    },
     levelWeights: { INFO: 45, WARN: 30, ERROR: 20, DEBUG: 5 },
     messages: {
       INFO:  ["Email sent successfully", "SMS delivered", "Push notification dispatched", "Digest email queued"],
@@ -45,8 +80,17 @@ const SERVICES = [
       DEBUG: ["Template rendered", "Recipient list resolved", "Unsubscribe check passed"],
     },
   },
+
   {
     name: "api-gateway",
+    routes: ["/api/*", "/health", "/status", "/metrics"],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    statusCodes: {
+      INFO: [200],
+      WARN: [429, 499],
+      ERROR: [500, 502, 503, 504],
+      DEBUG: [200]
+    },
     levelWeights: { INFO: 55, WARN: 20, ERROR: 15, DEBUG: 10 },
     messages: {
       INFO:  ["Request routed to auth-service", "Request routed to order-service", "Health check passed", "Rate limiter reset"],
@@ -55,8 +99,17 @@ const SERVICES = [
       DEBUG: ["Request headers sanitised", "Correlation ID attached", "Load balancer round-robin selected"],
     },
   },
+
   {
     name: "inventory-service",
+    routes: ["/api/inventory", "/api/inventory/restock", "/api/inventory/reserve", "/api/inventory/sync"],
+    methods: ["GET", "POST", "PUT"],
+    statusCodes: {
+      INFO: [200, 201],
+      WARN: [202, 409],
+      ERROR: [500, 503, 504],
+      DEBUG: [200]
+    },
     levelWeights: { INFO: 50, WARN: 25, ERROR: 15, DEBUG: 10 },
     messages: {
       INFO:  ["Stock updated", "Restock triggered", "SKU reservation made", "Warehouse sync complete"],
@@ -85,18 +138,37 @@ function rand(arr) {
 }
 
 function buildLog(service) {
-  const level = pickLevel(service.levelWeights);
-  const baseMessage = rand(service.messages[level]);
-  // Optionally append a request/trace ID for realism
-  const traceId = Math.random() > 0.5
-    ? ` [trace=${Math.random().toString(36).slice(2, 10)}]`
-    : "";
+  const level   = pickLevel(service.levelWeights);
+  const message = rand(service.messages[level]);
+  const route   = rand(service.routes);
+  const method  = rand(service.methods);
+  const statusCode = rand(service.statusCodes[level]);
+
+  const requestId    = Math.random().toString(36).slice(2, 18).toUpperCase();
+  const traceId      = Math.random().toString(36).slice(2, 18).toUpperCase();
+  const deploymentId = `deploy-${Math.random().toString(36).slice(2, 10)}`;
+  const responseTime = Math.floor(Math.random() * 1800) + 20; // 20–1820 ms
+
+  // Only attach stack trace to ERROR logs, ~40% of the time
+  const stackTrace =
+    level === "ERROR" && Math.random() < 0.4
+      ? `Error: ${message}\n    at ${service.name} (/${service.name}/index.js:${Math.floor(Math.random()*200)+1}:${Math.floor(Math.random()*60)+1})\n    at Layer.handle (express/lib/router/layer.js:95:5)\n    at next (express/lib/router/route.js:137:13)`
+      : undefined;
+
   return {
     service: service.name,
     level,
-    message: baseMessage + traceId,
+    message,
     meta: {
-      host: `${service.name}-pod-${Math.floor(Math.random() * 4) + 1}`,
+      host:         `${service.name}-pod-${Math.floor(Math.random() * 4) + 1}`,
+      route,
+      method,
+      statusCode,
+      responseTime,
+      requestId,
+      traceId,
+      deploymentId,
+      ...(stackTrace ? { stack: stackTrace } : {}),
     },
   };
 }

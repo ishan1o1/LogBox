@@ -95,41 +95,125 @@
 .lt-c-request { width: 200px; flex-shrink: 0; color: var(--text-muted); }
 .lt-c-message { flex: 1; color: var(--text-primary); }
 
-/* ── Detail ── */
+/* ── Detail panel wrapper ── */
 .lt-detail {
-  padding: 10px 16px 14px;
+  padding: 14px 16px 18px;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
-  animation: lt-fade 0.12s ease;
+  animation: lt-fade 0.14s ease;
 }
 @keyframes lt-fade {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
-.lt-detail-row {
+
+/* ── Header row: badge + timestamp + copy btn ── */
+.ld-header-row {
   display: flex;
-  gap: 16px;
-  padding: 3px 0;
-  font-size: 12px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
 }
-.lt-detail-key {
-  width: 80px;
-  flex-shrink: 0;
-  color: var(--text-muted);
-  font-weight: 500;
-}
-.lt-detail-val {
-  color: var(--text-primary);
+.ld-spacer { flex: 1; }
+
+/* Level badge */
+.ld-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
   font-family: var(--font-mono);
-  word-break: break-all;
+  letter-spacing: 0.06em;
+  border: 1px solid transparent;
 }
-.lt-detail-msg {
-  white-space: pre-wrap;
-}
-.lt-detail-pre {
+.ld-badge--error   { background: rgba(239,68,68,.15);  color: #f87171; border-color: rgba(239,68,68,.3); }
+.ld-badge--warn    { background: rgba(234,179,8,.15);  color: #facc15; border-color: rgba(234,179,8,.3); }
+.ld-badge--info    { background: rgba(99,102,241,.15); color: #818cf8; border-color: rgba(99,102,241,.3); }
+.ld-badge--debug   { background: rgba(107,114,128,.15);color: #9ca3af; border-color: rgba(107,114,128,.3); }
+.ld-badge--default { background: rgba(255,255,255,.08); color: var(--text-muted); border-color: var(--border); }
+
+/* ISO timestamp */
+.ld-timestamp {
   font-size: 11px;
   font-family: var(--font-mono);
-  color: var(--text-secondary);
+  color: var(--text-muted);
+}
+
+/* Copy button */
+.ld-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 500;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.ld-copy-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+
+/* Divider */
+.ld-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 10px 0 12px;
+}
+
+/* ── Metadata grid ── */
+.ld-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px 20px;
+  margin-bottom: 14px;
+}
+.ld-field {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ld-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ld-value {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+/* ── Section labels ── */
+.ld-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 12px 0 5px;
+}
+.ld-section-label--error {
+  color: #f87171;
+}
+
+/* ── Message pre ── */
+.ld-msg-pre {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -137,6 +221,38 @@
   white-space: pre-wrap;
   word-break: break-all;
   margin: 0;
+}
+
+/* ── Raw JSON pre ── */
+.ld-json-pre {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+/* ── Stack trace pre ── */
+.ld-stack-pre {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: #f87171;
+  background: rgba(239,68,68,.05);
+  border: 1px solid rgba(239,68,68,.2);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 /* ── Empty ── */

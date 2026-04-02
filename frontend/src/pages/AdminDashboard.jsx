@@ -53,26 +53,44 @@ function AdminDashboard() {
     return ms ? new Date(Date.now() - ms).toISOString() : null;
   }, [filters.duration]);
 
-  /* Parse key:value tokens from the search string.
-     e.g. "level:info service:auth some text"
-       → { level: "INFO", service: "auth", freeText: "some text" } */
+  /* Parse ALL key:value tokens from the search string.
+     e.g. "level:error method:POST route:/api/login some text"
+       → { level:"ERROR", meta:{ method:"POST", route:"/api/login" }, freeText:"some text" }
+     Top-level aliases: level, service. Everything else → meta.* */
   const LEVEL_ALIASES = { warning: "WARN", fatal: "ERROR" };
+
+  // Known meta keys the backend indexes under meta.*
+  const META_KEYS = new Set([
+    "route", "method", "statuscode", "status", "responsetime",
+    "requestid", "traceid", "deploymentid", "host",
+  ]);
+
   const parsedSearch = useMemo(() => {
-    const result = { level: null, service: null, freeText: "" };
+    const result = { level: null, service: null, meta: {}, freeText: "" };
     const freeTokens = [];
     for (const token of searchQuery.trim().split(/\s+/)) {
       if (!token) continue;
-      if (token.startsWith("level:")) {
-        const raw = token.slice(6).toUpperCase();
-        result.level = LEVEL_ALIASES[raw.toLowerCase()] ?? raw;
-      } else if (token.startsWith("service:")) {
-        result.service = token.slice(8);
+      const colonIdx = token.indexOf(":");
+      if (colonIdx > 0) {
+        const key   = token.slice(0, colonIdx).toLowerCase();
+        const value = token.slice(colonIdx + 1);
+        if (!value) { freeTokens.push(token); continue; }
+        if (key === "level") {
+          const raw = value.toUpperCase();
+          result.level = LEVEL_ALIASES[raw.toLowerCase()] ?? raw;
+        } else if (key === "service") {
+          result.service = value;
+        } else {
+          // Any other key goes into meta filters
+          result.meta[key] = value;
+        }
       } else {
         freeTokens.push(token);
       }
     }
     result.freeText = freeTokens.join(" ");
     return result;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
 
   /* Fetch */
@@ -82,12 +100,17 @@ function AdminDashboard() {
       const params = new URLSearchParams({ page: pageNum, limit: PAGE_SIZE });
       if (startTime) params.set("start", startTime);
 
-      // Parsed key:value tokens take priority over sidebar filters
+      // Level / service: parsed token wins over sidebar checkboxes
       const levelParam = parsedSearch.level || (filters.levels?.length === 1 ? filters.levels[0] : null);
       const serviceParam = parsedSearch.service || filters.service || null;
       if (parsedSearch.freeText) params.set("search", parsedSearch.freeText);
-      if (levelParam) params.set("level", levelParam);
+      if (levelParam)   params.set("level",   levelParam);
       if (serviceParam) params.set("service", serviceParam);
+
+      // Send every meta key:value pair as meta.<key>=<value>
+      for (const [k, v] of Object.entries(parsedSearch.meta)) {
+        if (v) params.set(`meta.${k}`, v);
+      }
 
       const res = await fetch(`${SOCKET_URL}/logs?${params}`);
       const data = await res.json();
@@ -140,21 +163,39 @@ function AdminDashboard() {
   const filteredLogs = useMemo(() => {
     let result = logs;
 
-    // Level: parsed token wins over sidebar checkboxes
-    const activeLevels = parsedSearch.level
-      ? [parsedSearch.level]
-      : filters.levels;
+    // Level
+    const activeLevels = parsedSearch.level ? [parsedSearch.level] : filters.levels;
     if (activeLevels.length > 0) {
-      result = result.filter((l) => activeLevels.includes(l.level));
+      result = result.filter((l) => activeLevels.includes(l.level?.toUpperCase()));
     }
 
-    // Service: parsed token wins
+    // Service
     const activeService = parsedSearch.service || filters.service;
     if (activeService) {
       result = result.filter((l) => l.service?.toLowerCase() === activeService.toLowerCase());
     }
 
-    // Free text against message
+    // Meta key:value filters (method, route, statuscode, etc.)
+    for (const [key, value] of Object.entries(parsedSearch.meta)) {
+      if (!value) continue;
+      const v = value.toLowerCase();
+      result = result.filter((l) => {
+        const meta = l.meta || {};
+        // Try exact key and common aliases
+        const candidates = [
+          meta[key],
+          meta[key.replace("code", "Code")],  // statuscode → statusCode
+          meta[key.replace("id", "Id")],       // requestid → requestId
+          meta[key.replace("time", "Time")],   // responsetime → responseTime
+          meta[key.charAt(0).toUpperCase() + key.slice(1)], // capitalized
+        ];
+        return candidates.some(
+          (c) => c != null && String(c).toLowerCase().includes(v)
+        );
+      });
+    }
+
+    // Free text against message + service
     if (parsedSearch.freeText) {
       const q = parsedSearch.freeText.toLowerCase();
       result = result.filter((l) =>

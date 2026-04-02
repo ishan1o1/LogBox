@@ -4,15 +4,14 @@ import "../styles/LogTable.css";
 function fmtTime(ts) {
   if (!ts) return "";
   const d = new Date(ts);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
-    + "." + String(d.getMilliseconds()).padStart(3, "0");
+  return (
+    d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) +
+    "." +
+    String(d.getMilliseconds()).padStart(3, "0")
+  );
 }
 
-function fmtDate(ts) {
-  if (!ts) return "";
-  return new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
+/* ─────────────────────── Main table ─────────────────────── */
 function LogTable({ logs, hasMore, loading, onLoadMore }) {
   const [expandedRow, setExpandedRow] = useState(null);
   const tableRef = useRef(null);
@@ -36,7 +35,11 @@ function LogTable({ logs, hasMore, loading, onLoadMore }) {
     return (
       <div className="lt-empty">
         <div className="lt-empty-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <line x1="9" y1="9" x2="15" y2="15" />
+            <line x1="15" y1="9" x2="9" y2="15" />
+          </svg>
         </div>
         <p className="lt-empty-title">There are no runtime logs in this time range</p>
         <div className="lt-empty-actions">
@@ -49,7 +52,7 @@ function LogTable({ logs, hasMore, loading, onLoadMore }) {
 
   return (
     <div className="lt-wrap" ref={tableRef}>
-      {/* Timeline bar placeholder */}
+      {/* Timeline bar */}
       <div className="lt-timeline-bar">
         <div className="lt-timeline-line" />
       </div>
@@ -78,32 +81,7 @@ function LogTable({ logs, hasMore, loading, onLoadMore }) {
               <span className="lt-c lt-c-message">{log.message}</span>
             </button>
 
-            {expandedRow === idx && (
-              <div className="lt-detail">
-                <div className="lt-detail-row">
-                  <span className="lt-detail-key">Timestamp</span>
-                  <span className="lt-detail-val">{new Date(log.timestamp).toISOString()}</span>
-                </div>
-                <div className="lt-detail-row">
-                  <span className="lt-detail-key">Level</span>
-                  <span className="lt-detail-val">{log.level}</span>
-                </div>
-                <div className="lt-detail-row">
-                  <span className="lt-detail-key">Service</span>
-                  <span className="lt-detail-val">{log.service || "N/A"}</span>
-                </div>
-                <div className="lt-detail-row">
-                  <span className="lt-detail-key">Message</span>
-                  <span className="lt-detail-val lt-detail-msg">{log.message}</span>
-                </div>
-                {log.meta && Object.keys(log.meta).length > 0 && (
-                  <div className="lt-detail-row">
-                    <span className="lt-detail-key">Meta</span>
-                    <pre className="lt-detail-pre">{JSON.stringify(log.meta, null, 2)}</pre>
-                  </div>
-                )}
-              </div>
-            )}
+            {expandedRow === idx && <LogDetailPanel log={log} />}
           </div>
         ))}
 
@@ -118,6 +96,108 @@ function LogTable({ logs, hasMore, loading, onLoadMore }) {
           <div className="lt-end">All logs loaded — {logs.length.toLocaleString()} total</div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────── Enriched detail panel ─────────────────────── */
+function LogDetailPanel({ log }) {
+  const [copied, setCopied] = useState(false);
+
+  const meta = log.meta || {};
+  const rawJson = JSON.stringify(log, null, 2);
+
+  const level = String(log.level || "").toLowerCase();
+  const levelClass =
+    level === "error" ? "ld-badge--error"
+    : level === "warn" ? "ld-badge--warn"
+    : level === "info" ? "ld-badge--info"
+    : level === "debug" ? "ld-badge--debug"
+    : "ld-badge--default";
+
+  const copyJson = () => {
+    navigator.clipboard.writeText(rawJson).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    });
+  };
+
+  /* Resolve fields with fallback aliases */
+  const statusCode = meta.statusCode  ?? meta.status      ?? meta.statuscode  ?? null;
+  const method     = meta.method      ?? meta.requestMethod                   ?? null;
+  const route      = meta.route       ?? meta.path         ?? meta.url        ?? null;
+  const host       = meta.host        ?? log.service                          ?? null;
+  const requestId  = meta.requestId   ?? meta.request_id                      ?? null;
+  const traceId    = meta.traceId     ?? meta.trace_id                        ?? null;
+  const deployId   = meta.deploymentId ?? meta.deployId   ?? meta.deployment_id ?? null;
+  const respTime   = meta.responseTime ?? meta.duration   ?? meta.latency     ?? null;
+  const stackTrace = meta.stack       ?? meta.stackTrace   ?? log.stack        ?? null;
+
+  /* Inline field component — renders nothing if value is empty/null */
+  const Field = ({ label, value }) => {
+    if (value == null || value === "") return null;
+    return (
+      <div className="ld-field">
+        <span className="ld-label">{label}</span>
+        <span className="ld-value">{String(value)}</span>
+      </div>
+    );
+  };
+
+  return (
+    <div className="lt-detail">
+
+      {/* ── Top strip: badge + ISO timestamp + copy button ── */}
+      <div className="ld-header-row">
+        <span className={`ld-badge ${levelClass}`}>{String(log.level || "").toUpperCase()}</span>
+        <span className="ld-timestamp">
+          {log.timestamp ? new Date(log.timestamp).toISOString() : "—"}
+        </span>
+        <span className="ld-spacer" />
+        <button className="ld-copy-btn" onClick={copyJson} title="Copy raw JSON">
+          {copied ? (
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 1 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z" />
+            </svg>
+          ) : (
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z" />
+              <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z" />
+            </svg>
+          )}
+          <span>{copied ? "Copied!" : "Copy JSON"}</span>
+        </button>
+      </div>
+
+      <div className="ld-divider" />
+
+      {/* ── Metadata grid ── */}
+      <div className="ld-grid">
+        <Field label="Service / Host"  value={host} />
+        <Field label="Route"           value={route} />
+        <Field label="Method"          value={method} />
+        <Field label="Status Code"     value={statusCode} />
+        <Field label="Response Time"   value={respTime != null ? `${respTime} ms` : null} />
+        <Field label="Request ID"      value={requestId} />
+        <Field label="Trace ID"        value={traceId} />
+        <Field label="Deployment ID"   value={deployId} />
+      </div>
+
+      {/* ── Message ── */}
+      <div className="ld-section-label">Message</div>
+      <pre className="ld-msg-pre">{log.message}</pre>
+
+      {/* ── Raw JSON ── */}
+      <div className="ld-section-label">Raw JSON</div>
+      <pre className="ld-json-pre">{rawJson}</pre>
+
+      {/* ── Stack trace (only if present) ── */}
+      {stackTrace && (
+        <>
+          <div className="ld-section-label ld-section-label--error">Stack Trace</div>
+          <pre className="ld-stack-pre">{stackTrace}</pre>
+        </>
+      )}
     </div>
   );
 }

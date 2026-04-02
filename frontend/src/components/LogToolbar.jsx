@@ -7,23 +7,25 @@ import "../styles/LogToolbar.css";
 const FILTER_CHIPS = [
   "level:",
   "service:",
-  "resource:",
-  "environment:",
+  "method:",
   "route:",
+  "status:",
+  "requestId:",
+  "traceId:",
+  "deploymentId:",
+  "host:",
 ];
 
 const FILTER_SUGGESTIONS = {
-  "level:": ["level:info", "level:warn", "level:error", "level:debug"],
-  "service:": [],   // dynamic — user types the service name
-  "resource:": [
-    "resource:cache",
-    "resource:function",
-    "resource:middleware",
-    "resource:redirect",
-    "resource:rewrite",
-  ],
-  "environment:": ["environment:preview", "environment:production"],
-  "route:": ["route:/api", "route:/auth", "route:/admin"],
+  "level:":        ["level:info", "level:warn", "level:error", "level:debug"],
+  "service:":      [],   // user types freely
+  "method:":       ["method:GET", "method:POST", "method:PUT", "method:DELETE", "method:PATCH"],
+  "route:":        [],   // user types freely
+  "status:":       ["status:200", "status:201", "status:400", "status:401", "status:403", "status:404", "status:500", "status:502", "status:503"],
+  "requestId:":    [],
+  "traceId:":      [],
+  "deploymentId:": [],
+  "host:":         [],
 };
 
 /* ──────────────────────────────────────────────
@@ -52,9 +54,8 @@ function saveRecentSearch(query) {
    e.g. "foo level:" → activePrefix = "level:"
    ────────────────────────────────────────────── */
 function getActivePrefix(query) {
-  // Take the last space-delimited token
-  const token = query.split(" ").pop();
-  return FILTER_CHIPS.find((chip) => token.startsWith(chip)) ?? null;
+  const token = query.split(" ").pop().toLowerCase();
+  return FILTER_CHIPS.find((chip) => token.startsWith(chip.toLowerCase())) ?? null;
 }
 
 /* ──────────────────────────────────────────────
