@@ -1,0 +1,130 @@
+/* ══════════════════════════════════════
+   Toolbar — Vercel-exact
+══════════════════════════════════════ */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--toolbar-h);
+  padding: 0 12px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Left icons */
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.toolbar-icon-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+.toolbar-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+.toolbar-icon-btn.spin .toolbar-refresh-svg {
+  animation: toolbar-spin 0.7s linear infinite;
+}
+@keyframes toolbar-spin { to { transform: rotate(360deg); } }
+
+/* Search bar — fills available space */
+.toolbar-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 10px;
+  height: 32px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.toolbar-search.focused {
+  border-color: var(--border-focus);
+}
+.toolbar-search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.toolbar-search-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+.toolbar-search-input::placeholder {
+  color: var(--text-muted);
+}
+.toolbar-search-clear {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+}
+.toolbar-search-clear:hover {
+  color: var(--text-primary);
+}
+
+/* Right — actions */
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Live toggle */
+.toolbar-live {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: inherit;
+}
+.toolbar-live:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+}
+.toolbar-live.on {
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .toolbar-live span { display: none; }
+}

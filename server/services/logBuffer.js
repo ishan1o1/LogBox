@@ -1,4 +1,4 @@
-const Log = require("../models/log");
+const client = require("../config/elasticsearch")
 
 let logBuffer = [];
 const BATCH_SIZE = 50;
@@ -12,8 +12,28 @@ async function flushLogs() {
   logBuffer = [];
 
   try {
-    await Log.insertMany(logsToInsert);
-    console.log(`✅ Inserted ${logsToInsert.length} logs`);
+    const body = logsToInsert.flatMap((log) => [
+      { index: { _index: "logs",_id: log.traceId || undefined } },
+      {
+        timestamp: log.timestamp || new Date(),
+        level: log.level || "INFO",
+        source: log.source || "unknown",
+        service: log.service || "general",
+        endpoint: log.endpoint || "",
+        message: log.message || "",
+        statusCode: log.statusCode || 200,
+        errorType: log.errorType || "NONE",
+        traceId: log.traceId || null,
+      },
+    ]);
+
+    const response = await client.bulk({ body });
+
+    if (response.errors) {
+      console.error("❌ Some logs failed to index");
+    } else {
+      console.log(`✅ Inserted ${logsToInsert.length} logs into Elasticsearch`);
+    }
   } catch (err) {
     console.error("❌ Batch insert failed:", err.message);
   }

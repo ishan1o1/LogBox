@@ -6,7 +6,7 @@ const http = require("http")
 const { Server } = require("socket.io");
 const {addLog} = require("./services/logBuffer");
 const Log = require("./models/log")
-
+const createLogsIndex = require("./utils/createIndex");
 const app = express();
 
 const server = http.createServer(app);
@@ -14,9 +14,22 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*" }
 });
+app.set("io",io);
 
 app.use(cors());
 app.use(express.json());
+const client = require("./config/elasticsearch");
+
+(async () => {
+  try {
+    const response = await client.info();
+    console.log("✅ Connected to Elasticsearch");
+    console.log(response);
+  } catch (err) {
+    console.error("❌ Elasticsearch connection failed:", err.message);
+  }
+})();
+createLogsIndex();
 
 // const MONGO_URI = `mongodb://${process.env.MONGO_USERNAME}:${process.env.MONGO_PASSWORD}@${process.env.MONGO_HOST}/?${process.env.MONGO_OPTIONS}`;
 
@@ -34,137 +47,79 @@ app.post("/log", async (req, res) => {
   try {
     const log = req.body;
     addLog(log);
-    io.emit("new-log",log);
-    res.json({ status: "stored" });
+    req.app.get("io").emit("new-log",log);
+    res.status(200).json({ status: "stored" });
   } catch (err) {
+    console.error("Elasticsearch error:",err);
     res.status(500).json({ error: err.message });
   }
 });
 
 app.get("/logs", async (req, res) => {
   try {
-    const { level, service, start, end, page = 1, limit = 1000, search } = req.query;
+    const {
+      level,
+      service,
+      start,
+      end,
+      page = 1,
+      limit = 100,
+      search,
+    } = req.query;
 
-    let filter = {};
+    const must = [];
 
-    if (level) filter.level = level;
-    if (service) filter.service = service;
+    // exact filters
+    if (level) {
+      must.push({ term: { level } });
+    }
 
+    if (service) {
+      must.push({ term: { service } });
+    }
+
+    // text search
     if (search) {
-      filter.message = { $regex: search, $options: "i" };
+      must.push({
+        match: {
+          message: search,
+        },
+      });
     }
 
+    // time range
     if (start || end) {
-      filter.timestamp = {};
-      if (start) filter.timestamp.$gte = new Date(start);
-      if (end) filter.timestamp.$lte = new Date(end);
+      const range = {};
+      if (start) range.gte = start;
+      if (end) range.lte = end;
+
+      must.push({
+        range: {
+          timestamp: range,
+        },
+      });
     }
 
-    const logs = await Log.find(filter)
-      .sort({ timestamp: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+    const from = (parseInt(page) - 1) * parseInt(limit);
+
+    const result = await client.search({
+      index: "logs",
+      from,
+      size: parseInt(limit),
+      sort: [{ timestamp: { order: "desc" } }],
+      query: must.length > 0
+        ? { bool: { must } }
+        : { match_all: {} },
+    });
+
+    const logs = result.hits.hits.map((hit) => ({
+      id: hit._id,
+      ...hit._source,
+    }));
 
     res.json(logs);
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ✅ Aggregated stats for the chart — returns per-minute, per-level counts
-// Never paginated — always reflects ALL logs in the selected time window
-app.get("/logs/stats", async (req, res) => {
-  try {
-    const { start, end } = req.query;
-
-    let match = {};
-    if (start || end) {
-      match.timestamp = {};
-      if (start) match.timestamp.$gte = new Date(start);
-      if (end)   match.timestamp.$lte = new Date(end);
-    }
-
-    const stats = await Log.aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: {
-            // Group by minute bucket + level
-            minute: {
-              $dateToString: { format: "%Y-%m-%d %H:%M", date: "$timestamp" }
-            },
-            level: "$level",
-          },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { "_id.minute": 1 } },
-    ]);
-
-    res.json(stats);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ✅ Error rate endpoint — calculates % of logs that are ERROR.
-app.get("/logs/error-rate", async (req, res) => {
-  try {
-    const { start, end } = req.query;
-
-    let match = {};
-    if (start || end) {
-      match.timestamp = {};
-      if (start) match.timestamp.$gte = new Date(start);
-      if (end)   match.timestamp.$lte = new Date(end);
-    }
-
-    const stats = await Log.aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: "$service",
-          totalLogs: { $sum: 1 },
-          errorLogs: { 
-            $sum: { $cond: [{ $eq: ["$level", "ERROR"] }, 1, 0] } 
-          }
-        }
-      },
-      {
-        $project: {
-          service: "$_id",
-          totalLogs: 1,
-          errorLogs: 1,
-          errorRate: {
-            $cond: [
-              { $eq: ["$totalLogs", 0] },
-              0,
-              { $multiply: [{ $divide: ["$errorLogs", "$totalLogs"] }, 100] }
-            ]
-          },
-          _id: 0
-        }
-      },
-      { $sort: { errorRate: -1 } }
-    ]);
-
-    const globalStats = stats.reduce((acc, curr) => {
-      acc.totalLogs += curr.totalLogs;
-      acc.errorLogs += curr.errorLogs;
-      return acc;
-    }, { totalLogs: 0, errorLogs: 0 });
-
-    const globalErrorRate = globalStats.totalLogs === 0 
-      ? 0 
-      : (globalStats.errorLogs / globalStats.totalLogs) * 100;
-
-    res.json({
-      globalErrorRate,
-      globalTotalLogs: globalStats.totalLogs,
-      globalErrorLogs: globalStats.errorLogs,
-      services: stats
-    });
-  } catch (err) {
+    console.error("❌ Error fetching logs:", err);
     res.status(500).json({ error: err.message });
   }
 });

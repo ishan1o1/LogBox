@@ -27,8 +27,8 @@ const LogSchema = new mongoose.Schema({
 });
 
 // Indexes (IMPORTANT for performance)
-LogSchema.index({ level: 1 });
-LogSchema.index({ service: 1 });
-LogSchema.index({ timestamp: -1 });
+LogSchema.index({ level: 1 , service: 1});
+LogSchema.index({timestamp:-1 });
+LogSchema.index({ message: "text" });
 
 module.exports = mongoose.model("Log", LogSchema);

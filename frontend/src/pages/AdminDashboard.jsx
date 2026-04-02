@@ -1,24 +1,20 @@
-import { useContext, useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useContext, useEffect, useState, useCallback, useMemo } from "react";
 import { io } from "socket.io-client";
 import { AuthContext } from "../context/AuthContext";
 
 import Navbar from "../components/Navbar";
-import LogChart from "../components/LogChart";
-import LogList from "../components/LogList";
-import LogFilters from "../components/LogFilters";
-import LogDurationFilter from "../components/LogDurationFilter";
-import ErrorRateCards from "../components/ErrorRateCards";
+import Sidebar from "../components/Sidebar";
+import LogToolbar from "../components/LogToolbar";
+import LogTable from "../components/LogTable";
 
 import "../styles/dashboard.css";
 
 const PAGE_SIZE = 50;
 const SOCKET_URL = "http://localhost:4000";
 
-// Duration label → milliseconds offset from now
 const DURATION_MS = {
-  "15m": 15 * 60 * 1000,
   "30m": 30 * 60 * 1000,
-  "1h":  1  * 60 * 60 * 1000,
+  "1h":  60 * 60 * 1000,
   "6h":  6  * 60 * 60 * 1000,
   "12h": 12 * 60 * 60 * 1000,
   "1d":  24 * 60 * 60 * 1000,
@@ -29,136 +25,146 @@ function AdminDashboard() {
   const { user, logout } = useContext(AuthContext);
 
   const [logs, setLogs] = useState([]);
-  const [filter, setFilter] = useState("ALL");
-  const [duration, setDuration] = useState("ALL");
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isLive, setIsLive] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Signals the chart to re-fetch stats (incremented on new live log)
-  const [chartVersion, setChartVersion] = useState(0);
+  const [filters, setFilters] = useState({
+    duration: "30m",
+    search: "",
+    levels: [],
+    statusCodes: [],
+    environments: [],
+    route: "",
+    resource: "",
+    service: "",
+    _userName: user?.name || "user",
+  });
 
-  // Debounce timer ref — avoid re-fetching chart on every single arriving log
-  const chartDebounceRef = useRef(null);
-
-  // ✅ Derive a stable ISO start time from the selected duration
+  /* Derived start time */
   const startTime = useMemo(() => {
-    if (duration === "ALL") return null;
-    const ms = DURATION_MS[duration];
-    if (!ms) return null;
-    return new Date(Date.now() - ms).toISOString();
-  }, [duration]);
+    if (filters.duration === "ALL") return null;
+    const ms = DURATION_MS[filters.duration];
+    return ms ? new Date(Date.now() - ms).toISOString() : null;
+  }, [filters.duration]);
 
-  // ✅ Core paginated fetch
+  /* Fetch */
   const fetchPage = useCallback(async (pageNum, reset = false) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: pageNum, limit: PAGE_SIZE });
       if (startTime) params.set("start", startTime);
+      if (searchQuery) params.set("search", searchQuery);
+      if (filters.levels?.length === 1) params.set("level", filters.levels[0]);
+      if (filters.service) params.set("service", filters.service);
 
       const res = await fetch(`${SOCKET_URL}/logs?${params}`);
       const data = await res.json();
       setLogs((prev) => (reset ? data : [...prev, ...data]));
       setHasMore(data.length === PAGE_SIZE);
     } catch (err) {
-      console.error("Failed to fetch logs:", err);
+      console.error("Fetch error:", err);
     } finally {
       setLoading(false);
     }
-  }, [startTime]);
+  }, [startTime, searchQuery, filters.levels, filters.service]);
 
-  // ✅ Reset list whenever duration changes
   useEffect(() => {
     setPage(1);
     fetchPage(1, true);
   }, [fetchPage]);
 
-  // ✅ Socket.io — live incoming logs
+  /* Socket.io */
   useEffect(() => {
+    if (!isLive) return;
     const socket = io(SOCKET_URL, { transports: ["websocket"] });
-
-    socket.on("connect", () => {
-      console.log("⚡ Socket connected:", socket.id);
-    });
-
     socket.on("new-log", (log) => {
-      // Only prepend if the log falls within the selected duration window
       if (startTime && new Date(log.timestamp) < new Date(startTime)) return;
-
       setLogs((prev) => [log, ...prev]);
-
-      // Debounce chart refresh — wait 1.5 s of silence before re-fetching stats
-      if (chartDebounceRef.current) clearTimeout(chartDebounceRef.current);
-      chartDebounceRef.current = setTimeout(() => {
-        setChartVersion((v) => v + 1);
-      }, 1500);
     });
+    return () => socket.disconnect();
+  }, [startTime, isLive]);
 
-    socket.on("disconnect", () => {
-      console.log("🔌 Socket disconnected");
-    });
+  /* Handlers */
+  const handleLoadMore = useCallback(() => {
+    const next = page + 1;
+    setPage(next);
+    fetchPage(next, false);
+  }, [page, fetchPage]);
 
-    return () => {
-      socket.disconnect();
-      if (chartDebounceRef.current) clearTimeout(chartDebounceRef.current);
-    };
-  }, [startTime]); // reconnect when duration window changes
+  const handleRefresh = () => { setPage(1); fetchPage(1, true); };
 
-  // ✅ Load More handler
-  const handleLoadMore = () => {
-    const nextPage = page + 1;
-    setPage(nextPage);
-    fetchPage(nextPage, false);
+  const handleExport = () => {
+    const json = JSON.stringify(filteredLogs, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `logbox-${new Date().toISOString().slice(0, 19)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
-  // ✅ Client-side level filter on top of paginated + live results
-  const filteredLogs =
-    filter === "ALL" ? logs : logs.filter((l) => l.level === filter);
+  /* Client-side filter */
+  const filteredLogs = useMemo(() => {
+    let result = logs;
+    if (filters.levels.length > 0) {
+      result = result.filter((l) => filters.levels.includes(l.level));
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((l) =>
+        l.message?.toLowerCase().includes(q) ||
+        l.service?.toLowerCase().includes(q) ||
+        l.level?.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [logs, filters.levels, searchQuery]);
+
+  /* Per-level counts for sidebar badges */
+  const logCounts = useMemo(() => {
+    const counts = { WARN: 0, ERROR: 0, DEBUG: 0 };
+    logs.forEach((l) => { if (counts[l.level] !== undefined) counts[l.level]++; });
+    return counts;
+  }, [logs]);
 
   return (
-    <div className="dashboard-container">
+    <div className="vdash">
       <Navbar user={user} logout={logout} />
 
-      <div className="dashboard-content">
+      <div className="vdash-body">
+        <Sidebar
+          isOpen={sidebarOpen}
+          onToggle={() => setSidebarOpen((p) => !p)}
+          filters={filters}
+          onFilterChange={setFilters}
+          logCounts={logCounts}
+        />
 
-        {/* Duration Dropdown */}
-        <LogDurationFilter duration={duration} setDuration={setDuration} />
+        <main className="vdash-main">
+          <LogToolbar
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            isLive={isLive}
+            onToggleLive={() => setIsLive((p) => !p)}
+            onRefresh={handleRefresh}
+            onExport={handleExport}
+            loading={loading}
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={() => setSidebarOpen(true)}
+          />
 
-        {/* Error Rate Cards fetches stats too via /logs/error-rate */}
-        <ErrorRateCards startTime={startTime} version={chartVersion} />
-
-        {/* Chart fetches ALL stats independently via /logs/stats */}
-        <LogChart startTime={startTime} version={chartVersion} />
-
-        {/* Level filter buttons */}
-        <LogFilters filter={filter} setFilter={setFilter} />
-
-        {/* List shows paginated + live + level-filtered logs */}
-        <LogList logs={filteredLogs} filter={filter} />
-
-        {/* Load More / status row */}
-        <div className="load-more-row">
-          <span className="log-count-label">
-            Showing {filteredLogs.length} log{filteredLogs.length !== 1 ? "s" : ""}
-            {filter !== "ALL" ? ` (${filter} filtered)` : ""}
-          </span>
-
-          {hasMore && (
-            <button
-              id="load-more-btn"
-              className="load-more-btn"
-              onClick={handleLoadMore}
-              disabled={loading}
-            >
-              {loading ? "Loading…" : "Load More"}
-            </button>
-          )}
-
-          {!hasMore && logs.length > 0 && (
-            <span className="no-more-label">All logs loaded</span>
-          )}
-        </div>
-
+          <LogTable
+            logs={filteredLogs}
+            hasMore={hasMore}
+            loading={loading}
+            onLoadMore={handleLoadMore}
+          />
+        </main>
       </div>
     </div>
   );

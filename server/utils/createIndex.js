@@ -1,0 +1,34 @@
+const client = require("../config/elasticsearch");
+
+const createLogsIndex = async () => {
+  try {
+    const exists = await client.indices.exists({ index: "logs" });
+
+    if (!exists) {
+      await client.indices.create({
+        index: "logs",
+        mappings: {
+          properties: {
+            timestamp: { type: "date" },
+            level: { type: "keyword" },
+            source: { type: "keyword" },
+            service: { type: "keyword" },
+            endpoint: { type: "keyword" },
+            message: { type: "text" },
+            statusCode: { type: "integer" },
+            errorType: { type: "keyword" },
+            traceId: { type: "keyword" },
+          },
+        },
+      });
+
+      console.log("✅ Elasticsearch 'logs' index created");
+    } else {
+      console.log("ℹ️ Elasticsearch 'logs' index already exists");
+    }
+  } catch (error) {
+    console.error("❌ Error creating Elasticsearch index:", error);
+  }
+};
+
+module.exports = createLogsIndex;
