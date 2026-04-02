@@ -43,17 +43,23 @@ mongoose.connect(MONGO_URI)
 
 
 app.post("/log", async (req, res) => {
-   console.log("HIT:", req.body);
+  console.log("HIT:", req.body);
   try {
-    const log = req.body;
-    addLog(log);
-    req.app.get("io").emit("new-log",log);
-    res.status(200).json({ status: "stored" });
+    const incoming = req.body;
+    const logs = Array.isArray(incoming) ? incoming : [incoming];
+
+    logs.forEach((log) => {
+      addLog(log);
+      req.app.get("io").emit("new-log", log);
+    });
+
+    res.status(200).json({ status: "stored", count: logs.length });
   } catch (err) {
-    console.error("Elasticsearch error:",err);
+    console.error("Elasticsearch error:", err);
     res.status(500).json({ error: err.message });
   }
 });
+
 
 app.get("/logs", async (req, res) => {
   try {

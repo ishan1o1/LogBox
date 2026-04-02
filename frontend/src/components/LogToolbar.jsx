@@ -1,6 +1,65 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import "../styles/LogToolbar.css";
 
+/* ──────────────────────────────────────────────
+   Filter chips + their contextual value suggestions
+   ────────────────────────────────────────────── */
+const FILTER_CHIPS = [
+  "level:",
+  "service:",
+  "resource:",
+  "environment:",
+  "route:",
+];
+
+const FILTER_SUGGESTIONS = {
+  "level:": ["level:info", "level:warn", "level:error", "level:debug"],
+  "service:": [],   // dynamic — user types the service name
+  "resource:": [
+    "resource:cache",
+    "resource:function",
+    "resource:middleware",
+    "resource:redirect",
+    "resource:rewrite",
+  ],
+  "environment:": ["environment:preview", "environment:production"],
+  "route:": ["route:/api", "route:/auth", "route:/admin"],
+};
+
+/* ──────────────────────────────────────────────
+   Recent-search helpers (localStorage)
+   ────────────────────────────────────────────── */
+const RECENT_KEY = "logbox_recent_searches";
+const MAX_RECENT = 8;
+
+function getRecentSearches() {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentSearch(query) {
+  if (!query.trim()) return;
+  const prev = getRecentSearches().filter((s) => s !== query);
+  const next = [query, ...prev].slice(0, MAX_RECENT);
+  localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+}
+
+/* ──────────────────────────────────────────────
+   Derive which prefix (if any) is being typed
+   e.g. "foo level:" → activePrefix = "level:"
+   ────────────────────────────────────────────── */
+function getActivePrefix(query) {
+  // Take the last space-delimited token
+  const token = query.split(" ").pop();
+  return FILTER_CHIPS.find((chip) => token.startsWith(chip)) ?? null;
+}
+
+/* ──────────────────────────────────────────────
+   Component
+   ────────────────────────────────────────────── */
 function LogToolbar({
   searchQuery,
   onSearchChange,
@@ -13,8 +72,12 @@ function LogToolbar({
   onToggleSidebar,
 }) {
   const inputRef = useRef(null);
+  const panelRef = useRef(null);
   const [focused, setFocused] = useState(false);
+  const [showPanel, setShowPanel] = useState(false);
+  const [recents, setRecents] = useState([]);
 
+  /* Keyboard shortcut Ctrl/Cmd+K */
   useEffect(() => {
     const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -26,16 +89,88 @@ function LogToolbar({
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  /* Close panel on outside click */
+  useEffect(() => {
+    if (!showPanel) return;
+    const handler = (e) => {
+      if (panelRef.current && !panelRef.current.contains(e.target)) {
+        setShowPanel(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showPanel]);
+
+  const handleFocus = () => {
+    setFocused(true);
+    setRecents(getRecentSearches());
+    setShowPanel(true);
+  };
+
+  const handleBlur = () => {
+    setFocused(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && searchQuery.trim()) {
+      saveRecentSearch(searchQuery.trim());
+      setRecents(getRecentSearches());
+      setShowPanel(false);
+    }
+    if (e.key === "Escape") {
+      setShowPanel(false);
+      inputRef.current?.blur();
+    }
+  };
+
+  /* Append a filter prefix chip (e.g. "level:") to the query */
+  const applyChip = useCallback((chip) => {
+    const newVal = searchQuery + chip;
+    onSearchChange(newVal);
+    inputRef.current?.focus();
+  }, [searchQuery, onSearchChange]);
+
+  /* Replace the current token with a full suggestion (e.g. "level:error") */
+  const applySuggestion = useCallback((suggestion) => {
+    const parts = searchQuery.split(" ");
+    parts[parts.length - 1] = suggestion;
+    const newVal = parts.join(" ");
+    onSearchChange(newVal);
+    saveRecentSearch(newVal.trim());
+    setRecents(getRecentSearches());
+    setShowPanel(false);
+    inputRef.current?.focus();
+  }, [searchQuery, onSearchChange]);
+
+  const applyRecent = useCallback((val) => {
+    onSearchChange(val);
+    saveRecentSearch(val);
+    setShowPanel(false);
+  }, [onSearchChange]);
+
+  const handleClear = () => {
+    onSearchChange("");
+    inputRef.current?.focus();
+  };
+
+  /* What to show in the panel */
+  const activePrefix = getActivePrefix(searchQuery);
+  const suggestions = activePrefix ? FILTER_SUGGESTIONS[activePrefix] ?? [] : [];
+  const showSuggestions = activePrefix !== null;
+
+  // Filter recent searches to match the current query if typing (optional UX nicety)
+  const filteredRecents = searchQuery
+    ? recents.filter((r) => r.toLowerCase().includes(searchQuery.toLowerCase()) && r !== searchQuery)
+    : recents;
+
+  const hasContent = filteredRecents.length > 0 || suggestions.length > 0 || (!showSuggestions && FILTER_CHIPS.length > 0);
+
   return (
     <div className="toolbar">
-      {/* Left icons — filter toggle + settings */}
+      {/* Left icons — filter toggle */}
       <div className="toolbar-left">
         {!sidebarOpen && (
-          <button
-            className="toolbar-icon-btn"
-            onClick={onToggleSidebar}
-            title="Open filters"
-          >
+          <button className="toolbar-icon-btn" onClick={onToggleSidebar} title="Open filters">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
               <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
@@ -47,31 +182,91 @@ function LogToolbar({
         )}
       </div>
 
-      {/* Search bar — grows to fill */}
-      <div className={`toolbar-search ${focused ? "focused" : ""}`}>
-        <svg className="toolbar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-        </svg>
-        <input
-          ref={inputRef}
-          className="toolbar-search-input"
-          placeholder="Search logs..."
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-        />
-        {searchQuery && (
-          <button className="toolbar-search-clear" onClick={() => onSearchChange("")}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M9 3L3 9M3 3l6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-          </button>
+      {/* Search bar + suggestions panel */}
+      <div className="toolbar-search-wrap" ref={panelRef}>
+        <div className={`toolbar-search ${focused ? "focused" : ""}`}>
+          <svg className="toolbar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input
+            ref={inputRef}
+            className="toolbar-search-input"
+            placeholder="Search logs..."
+            value={searchQuery}
+            onChange={(e) => {
+              onSearchChange(e.target.value);
+              setRecents(getRecentSearches());
+              setShowPanel(true);
+            }}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+          />
+          {searchQuery && (
+            <button className="toolbar-search-clear" onMouseDown={handleClear}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M9 3L3 9M3 3l6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Suggestions panel */}
+        {showPanel && hasContent && (
+          <div className="search-panel">
+
+            {/* Recent searches — only when not in contextual-suggestion mode */}
+            {!showSuggestions && filteredRecents.length > 0 && (
+              <div className="search-panel-section">
+                <span className="search-panel-label">Recent searches</span>
+                <div className="search-panel-chips">
+                  {filteredRecents.map((r) => (
+                    <button key={r} className="search-chip recent" onMouseDown={() => applyRecent(r)}>
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Contextual value suggestions — shown when a prefix is active */}
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="search-panel-section">
+                <span className="search-panel-label">Suggestions</span>
+                <div className="search-panel-chips vertical">
+                  {suggestions.map((s) => (
+                    <button key={s} className="search-chip suggestion" onMouseDown={() => applySuggestion(s)}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Generic filter chips — shown when no prefix is active */}
+            {!showSuggestions && (
+              <div className="search-panel-section">
+                <span className="search-panel-label">Filters</span>
+                <div className="search-panel-chips">
+                  {FILTER_CHIPS.map((chip) => (
+                    <button key={chip} className="search-chip filter" onMouseDown={() => applyChip(chip)}>
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
       {/* Right actions */}
       <div className="toolbar-right">
         <button className={`toolbar-live ${isLive ? "on" : ""}`} onClick={onToggleLive}>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" strokeWidth="1.5"/>{isLive && <circle cx="6" cy="6" r="2" fill="currentColor"/>}</svg>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <circle cx="6" cy="6" r="4" stroke="currentColor" strokeWidth="1.5"/>
+            {isLive && <circle cx="6" cy="6" r="2" fill="currentColor"/>}
+          </svg>
           <span>Live</span>
         </button>
 
@@ -84,7 +279,8 @@ function LogToolbar({
 
         <button className="toolbar-icon-btn" onClick={onExport} title="Export">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
         </button>
       </div>

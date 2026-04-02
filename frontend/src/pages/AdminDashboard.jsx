@@ -19,6 +19,8 @@ const DURATION_MS = {
   "12h": 12 * 60 * 60 * 1000,
   "1d":  24 * 60 * 60 * 1000,
   "3d":  3  * 24 * 60 * 60 * 1000,
+  "7d":  7  * 24 * 60 * 60 * 1000,
+  "14d": 14 * 24 * 60 * 60 * 1000,
 };
 
 function AdminDashboard() {
@@ -51,15 +53,41 @@ function AdminDashboard() {
     return ms ? new Date(Date.now() - ms).toISOString() : null;
   }, [filters.duration]);
 
+  /* Parse key:value tokens from the search string.
+     e.g. "level:info service:auth some text"
+       → { level: "INFO", service: "auth", freeText: "some text" } */
+  const LEVEL_ALIASES = { warning: "WARN", fatal: "ERROR" };
+  const parsedSearch = useMemo(() => {
+    const result = { level: null, service: null, freeText: "" };
+    const freeTokens = [];
+    for (const token of searchQuery.trim().split(/\s+/)) {
+      if (!token) continue;
+      if (token.startsWith("level:")) {
+        const raw = token.slice(6).toUpperCase();
+        result.level = LEVEL_ALIASES[raw.toLowerCase()] ?? raw;
+      } else if (token.startsWith("service:")) {
+        result.service = token.slice(8);
+      } else {
+        freeTokens.push(token);
+      }
+    }
+    result.freeText = freeTokens.join(" ");
+    return result;
+  }, [searchQuery]);
+
   /* Fetch */
   const fetchPage = useCallback(async (pageNum, reset = false) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: pageNum, limit: PAGE_SIZE });
       if (startTime) params.set("start", startTime);
-      if (searchQuery) params.set("search", searchQuery);
-      if (filters.levels?.length === 1) params.set("level", filters.levels[0]);
-      if (filters.service) params.set("service", filters.service);
+
+      // Parsed key:value tokens take priority over sidebar filters
+      const levelParam = parsedSearch.level || (filters.levels?.length === 1 ? filters.levels[0] : null);
+      const serviceParam = parsedSearch.service || filters.service || null;
+      if (parsedSearch.freeText) params.set("search", parsedSearch.freeText);
+      if (levelParam) params.set("level", levelParam);
+      if (serviceParam) params.set("service", serviceParam);
 
       const res = await fetch(`${SOCKET_URL}/logs?${params}`);
       const data = await res.json();
@@ -70,7 +98,7 @@ function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [startTime, searchQuery, filters.levels, filters.service]);
+  }, [startTime, parsedSearch, filters.levels, filters.service]);
 
   useEffect(() => {
     setPage(1);
@@ -108,22 +136,35 @@ function AdminDashboard() {
     URL.revokeObjectURL(url);
   };
 
-  /* Client-side filter */
+  /* Client-side filter — mirrors server-side logic for live-streamed logs */
   const filteredLogs = useMemo(() => {
     let result = logs;
-    if (filters.levels.length > 0) {
-      result = result.filter((l) => filters.levels.includes(l.level));
+
+    // Level: parsed token wins over sidebar checkboxes
+    const activeLevels = parsedSearch.level
+      ? [parsedSearch.level]
+      : filters.levels;
+    if (activeLevels.length > 0) {
+      result = result.filter((l) => activeLevels.includes(l.level));
     }
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
+
+    // Service: parsed token wins
+    const activeService = parsedSearch.service || filters.service;
+    if (activeService) {
+      result = result.filter((l) => l.service?.toLowerCase() === activeService.toLowerCase());
+    }
+
+    // Free text against message
+    if (parsedSearch.freeText) {
+      const q = parsedSearch.freeText.toLowerCase();
       result = result.filter((l) =>
         l.message?.toLowerCase().includes(q) ||
-        l.service?.toLowerCase().includes(q) ||
-        l.level?.toLowerCase().includes(q)
+        l.service?.toLowerCase().includes(q)
       );
     }
+
     return result;
-  }, [logs, filters.levels, searchQuery]);
+  }, [logs, filters.levels, filters.service, parsedSearch]);
 
   /* Per-level counts for sidebar badges */
   const logCounts = useMemo(() => {

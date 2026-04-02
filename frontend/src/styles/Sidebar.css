@@ -144,44 +144,81 @@
   transform: rotate(90deg);
 }
 
-/* ── Duration select ── */
-.sb-duration-select {
+/* ── Timeline custom dropdown ── */
+.tl-dropdown {
+  position: relative;
+}
+.tl-trigger {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  width: 100%;
   padding: 6px 10px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  position: relative;
   color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color var(--transition);
+  text-align: left;
 }
-.sb-duration-select svg:first-child {
+.tl-trigger:hover,
+.tl-trigger.open {
+  border-color: var(--border-focus);
+}
+.tl-cal-icon {
   color: var(--text-muted);
   flex-shrink: 0;
 }
-.sb-duration-select select {
+.tl-trigger-label {
   flex: 1;
+}
+.tl-chev {
+  color: var(--text-muted);
+  transition: transform var(--transition);
+  flex-shrink: 0;
+}
+.tl-chev.open {
+  transform: rotate(180deg);
+}
+
+/* Panel */
+.tl-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius-sm);
+  z-index: 200;
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  padding: 4px 0;
+}
+.tl-option {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
   background: none;
   border: none;
-  outline: none;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 13px;
   font-family: inherit;
-  font-weight: 500;
-  appearance: none;
+  font-weight: 400;
+  text-align: left;
   cursor: pointer;
-  padding-right: 14px;
+  transition: background var(--transition);
 }
-.sb-duration-select select option {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
+.tl-option:hover {
+  background: var(--bg-hover);
 }
-.sb-select-arrow {
-  position: absolute;
-  right: 8px;
-  color: var(--text-muted);
-  pointer-events: none;
+.tl-option.selected {
+  background: var(--bg-active);
+  font-weight: 500;
 }
 
 /* ── Checkbox ── */

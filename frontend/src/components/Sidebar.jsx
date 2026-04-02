@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import "../styles/Sidebar.css";
 
 const LEVEL_OPTIONS = [
@@ -6,6 +6,72 @@ const LEVEL_OPTIONS = [
   { key: "ERROR", label: "Error" },
   { key: "DEBUG", label: "Fatal" },
 ];
+
+/* All timeline duration options */
+const DURATIONS = [
+  { label: "Last 30 minutes", value: "30m" },
+  { label: "Last hour",       value: "1h"  },
+  { label: "Last 6 hours",    value: "6h"  },
+  { label: "Last 12 hours",   value: "12h" },
+  { label: "Last day",        value: "1d"  },
+  { label: "Last 3 days",     value: "3d"  },
+  { label: "Last week",       value: "7d"  },
+  { label: "Last 2 weeks",    value: "14d" },
+];
+
+function getLabelForValue(value) {
+  return DURATIONS.find((o) => o.value === value)?.label ?? value;
+}
+
+function TimelineDropdown({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  /* Close on outside click */
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    if (open) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div className="tl-dropdown" ref={ref}>
+      {/* Trigger */}
+      <button
+        className={`tl-trigger ${open ? "open" : ""}`}
+        onClick={() => setOpen((p) => !p)}
+      >
+        <svg className="tl-cal-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+          <line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/>
+          <line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        <span className="tl-trigger-label">{getLabelForValue(value)}</span>
+        <svg className={`tl-chev ${open ? "open" : ""}`} width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <path d="M2 4l3 3 3-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+
+      {/* Dropdown panel */}
+      {open && (
+        <div className="tl-panel">
+          {DURATIONS.map((opt) => (
+            <button
+              key={opt.value}
+              className={`tl-option ${opt.value === value ? "selected" : ""}`}
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Sidebar({ isOpen, onToggle, filters, onFilterChange, logCounts }) {
   const [expandedSections, setExpandedSections] = useState({
@@ -64,16 +130,6 @@ function Sidebar({ isOpen, onToggle, filters, onFilterChange, logCounts }) {
     </button>
   );
 
-  const durations = [
-    { label: "Last 30 minutes", value: "30m" },
-    { label: "Last 1 hour", value: "1h" },
-    { label: "Last 6 hours", value: "6h" },
-    { label: "Last 12 hours", value: "12h" },
-    { label: "Last 1 day", value: "1d" },
-    { label: "Last 3 days", value: "3d" },
-    { label: "All Time", value: "ALL" },
-  ];
-
   return (
     <aside className={`sb ${isOpen ? "open" : "closed"}`}>
       {/* back + Logs */}
@@ -89,9 +145,7 @@ function Sidebar({ isOpen, onToggle, filters, onFilterChange, logCounts }) {
       {/* Filters header */}
       <div className="sb-filters-head">
         <span className="sb-filters-title">Filters</span>
-        {activeCount() > 0 && (
-          <button className="sb-reset" onClick={resetFilters}>Reset</button>
-        )}
+        <button className="sb-reset" onClick={resetFilters}>Reset</button>
       </div>
 
       {/* Scrollable body */}
@@ -107,20 +161,10 @@ function Sidebar({ isOpen, onToggle, filters, onFilterChange, logCounts }) {
           </button>
           {expandedSections.timeline && (
             <div className="sb-section-body">
-              <div className="sb-duration-select">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                <select
-                  value={filters.duration}
-                  onChange={(e) => onFilterChange({ ...filters, duration: e.target.value })}
-                >
-                  {durations.map((d) => (
-                    <option key={d.value} value={d.value}>{d.label}</option>
-                  ))}
-                </select>
-                <svg className="sb-select-arrow" width="10" height="10" viewBox="0 0 10 10" fill="none">
-                  <path d="M2 4l3 3 3-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
+              <TimelineDropdown
+                value={filters.duration}
+                onChange={(val) => onFilterChange({ ...filters, duration: val })}
+              />
             </div>
           )}
         </div>

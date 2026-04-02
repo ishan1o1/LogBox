@@ -27,7 +27,7 @@ async function flushLogs() {
       },
     ]);
 
-    const response = await client.bulk({ body });
+    const response = await client.bulk({ refresh: true, body });
 
     if (response.errors) {
       console.error("❌ Some logs failed to index");

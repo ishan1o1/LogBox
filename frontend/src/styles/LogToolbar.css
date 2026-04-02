@@ -44,9 +44,16 @@
 }
 @keyframes toolbar-spin { to { transform: rotate(360deg); } }
 
+/* Search wrap — positions panel relative to search bar */
+.toolbar-search-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Search bar — fills available space */
 .toolbar-search {
-  flex: 1;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -127,4 +134,88 @@
 /* ── Responsive ── */
 @media (max-width: 640px) {
   .toolbar-live span { display: none; }
+}
+
+/* ── Search Panel ── */
+.search-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius-sm);
+  z-index: 300;
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.search-panel-section {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.search-panel-section:last-child {
+  border-bottom: none;
+}
+.search-panel-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.search-panel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.search-chip {
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border-focus);
+  transition: background var(--transition), border-color var(--transition);
+  line-height: 1.6;
+}
+.search-chip.recent {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+.search-chip.recent:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-focus);
+}
+.search-chip.filter {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+.search-chip.filter:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+
+/* Suggestion chips (context-aware values) — vertical list */
+.search-panel-chips.vertical {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 2px;
+}
+.search-chip.suggestion {
+  background: none;
+  color: var(--text-primary);
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  padding: 6px 10px;
+}
+.search-chip.suggestion:hover {
+  background: var(--bg-hover);
+  border-color: transparent;
 }
