@@ -80,13 +80,38 @@ app.get("/logs", async (req, res) => {
     if (level)   must.push({ term: { level: level.toUpperCase() } });
     if (service) must.push({ term: { service } });
 
-    /* ── Free-text message search ── */
+    /* ── Free-text search ──────────────────────────────────────────────────
+       'message' is a text field   → phrase_prefix is fine
+       'service' is a keyword field → use wildcard instead
+       We combine them in a should so either match counts.
+    ──────────────────────────────────────────────────────────────────────── */
     if (search) {
       must.push({
-        multi_match: {
-          query:  search,
-          fields: ["message", "service"],
-          type:   "phrase_prefix",
+        bool: {
+          should: [
+            {
+              match_phrase_prefix: {
+                message: { query: search },
+              },
+            },
+            {
+              wildcard: {
+                service: {
+                  value:            `*${search.toLowerCase()}*`,
+                  case_insensitive: true,
+                },
+              },
+            },
+            {
+              wildcard: {
+                level: {
+                  value:            `*${search.toUpperCase()}*`,
+                  case_insensitive: true,
+                },
+              },
+            },
+          ],
+          minimum_should_match: 1,
         },
       });
     }
@@ -99,49 +124,68 @@ app.get("/logs", async (req, res) => {
       must.push({ range: { timestamp: range } });
     }
 
-    /* ── Dynamic meta.* filters ──────────────────────────────────────────
-       Any query param of the form  meta.<key>=<value>
-       maps to an ES query against the stored  meta.<key>  field.
+    /* ── key:value filters ────────────────────────────────────────────────
+       The frontend sends tokens like  statuscode:200  as  meta.statuscode=200.
+       All searchable fields are stored at the TOP LEVEL in Elasticsearch
+       (not under a meta sub-object). This map resolves lowercase aliases to
+       the correct camelCase ES field name.
 
-       We try to be smart about the actual field name stored in ES (camelCase)
-       so we canonicalize common aliases:
-         method     → meta.method        (exact keyword)
-         route      → meta.route         (exact keyword)
-         statuscode → meta.statusCode    (numeric/keyword)
-         status     → meta.statusCode
-         requestid  → meta.requestId     (keyword)
-         traceid    → meta.traceId       (keyword)
-         deploymentid→meta.deploymentId  (keyword)
-         responsetime→meta.responseTime  (numeric)
-         host       → meta.host          (keyword)
+         statuscode / status  → statusCode   (integer)
+         responsetime         → responseTime (integer)
+         method               → method       (keyword)
+         route                → route        (keyword)
+         endpoint             → endpoint     (keyword)
+         requestid            → requestId    (keyword)
+         traceid              → traceId      (keyword)
+         deploymentid         → deploymentId (keyword)
+         errortype            → errorType    (keyword)
+         environment          → environment  (keyword)
+         source               → source       (keyword)
+         host                 → host         (keyword)  ← if stored
     ──────────────────────────────────────────────────────────────────── */
-    const META_FIELD_MAP = {
-      method:        "meta.method",
-      route:         "meta.route",
-      statuscode:    "meta.statusCode",
-      status:        "meta.statusCode",
-      requestid:     "meta.requestId",
-      traceid:       "meta.traceId",
-      deploymentid:  "meta.deploymentId",
-      responsetime:  "meta.responseTime",
-      host:          "meta.host",
+    const FIELD_MAP = {
+      // numeric
+      statuscode:    { field: "statusCode",   numeric: true  },
+      status:        { field: "statusCode",   numeric: true  },
+      responsetime:  { field: "responseTime", numeric: true  },
+      // keyword
+      method:        { field: "method",       numeric: false },
+      route:         { field: "route",        numeric: false },
+      endpoint:      { field: "endpoint",     numeric: false },
+      requestid:     { field: "requestId",    numeric: false },
+      traceid:       { field: "traceId",      numeric: false },
+      deploymentid:  { field: "deploymentId", numeric: false },
+      errortype:     { field: "errorType",    numeric: false },
+      environment:   { field: "environment",  numeric: false },
+      source:        { field: "source",       numeric: false },
+      host:          { field: "host",         numeric: false },
     };
 
     for (const [param, value] of Object.entries(rest)) {
       if (!param.startsWith("meta.") || !value) continue;
-      const rawKey = param.slice(5).toLowerCase();            // strip "meta."
-      const esField = META_FIELD_MAP[rawKey]
-        ?? `meta.${param.slice(5)}`;                          // passthrough
+      const rawKey = param.slice(5).toLowerCase();   // strip "meta." prefix
+      const mapping = FIELD_MAP[rawKey];
 
-      // Numeric fields → range (supports plain value or ">=200" style)
-      const numericFields = new Set(["meta.statusCode", "meta.responseTime"]);
-      if (numericFields.has(esField)) {
-        const num = Number(value);
-        if (!isNaN(num)) {
-          must.push({ term: { [esField]: num } });
+      if (mapping) {
+        if (mapping.numeric) {
+          const num = Number(value);
+          if (!isNaN(num)) {
+            must.push({ term: { [mapping.field]: num } });
+          }
+        } else {
+          // keyword — wildcard for partial/case-insensitive match
+          must.push({
+            wildcard: {
+              [mapping.field]: {
+                value:            `*${value.toLowerCase()}*`,
+                case_insensitive: true,
+              },
+            },
+          });
         }
       } else {
-        // String fields — use wildcard for partial matching (e.g. route:/api)
+        // Unknown key — pass through as-is (best-effort wildcard)
+        const esField = param.slice(5); // strip "meta." but keep original casing
         must.push({
           wildcard: {
             [esField]: {

@@ -167,25 +167,48 @@
   text-transform: none;
   letter-spacing: 0;
 }
+/* Filter chip grid — allows more chips to wrap nicely */
 .search-panel-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* Base chip */
 .search-chip {
-  padding: 3px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
   border-radius: var(--radius-sm);
   font-size: 12px;
-  font-family: var(--font-mono);
-  font-weight: 500;
   cursor: pointer;
   border: 1px solid var(--border-focus);
-  transition: background var(--transition), border-color var(--transition);
-  line-height: 1.6;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+  line-height: 1.5;
+  white-space: nowrap;
 }
+
+/* Label part — monospace key name */
+.chip-label {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+/* Hint part — human-readable description */
+.chip-hint {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.6;
+}
+
 .search-chip.recent {
   background: var(--bg-active);
   color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-weight: 500;
 }
 .search-chip.recent:hover {
   background: var(--bg-hover);
@@ -199,6 +222,9 @@
   background: var(--bg-active);
   color: var(--text-primary);
   border-color: var(--border-focus);
+}
+.search-chip.filter:hover .chip-hint {
+  opacity: 0.8;
 }
 
 /* Suggestion chips (context-aware values) — vertical list */
@@ -214,8 +240,11 @@
   border-radius: var(--radius-sm);
   text-align: left;
   padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-weight: 500;
 }
 .search-chip.suggestion:hover {
   background: var(--bg-hover);
   border-color: transparent;
 }
+

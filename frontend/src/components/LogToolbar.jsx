@@ -4,28 +4,54 @@ import "../styles/LogToolbar.css";
 /* ──────────────────────────────────────────────
    Filter chips + their contextual value suggestions
    ────────────────────────────────────────────── */
+// All searchable fields that exist in actual log documents.
+// Keys must match what the backend FIELD_MAP understands (case-insensitive).
 const FILTER_CHIPS = [
-  "level:",
-  "service:",
-  "method:",
-  "route:",
-  "status:",
-  "requestId:",
-  "traceId:",
-  "deploymentId:",
-  "host:",
+  { label: "level:",        hint: "Log level"          },
+  { label: "service:",      hint: "Service name"        },
+  { label: "status:",       hint: "HTTP status code"    },
+  { label: "method:",       hint: "HTTP method"         },
+  { label: "route:",        hint: "Request route"       },
+  { label: "endpoint:",     hint: "Endpoint path"       },
+  { label: "errorType:",    hint: "Error type"          },
+  { label: "environment:",  hint: "Deploy environment"  },
+  { label: "source:",       hint: "Log source"          },
+  { label: "responseTime:", hint: "Response time (ms)" },
+  { label: "traceId:",      hint: "Trace ID"            },
+  { label: "requestId:",    hint: "Request ID"          },
+  { label: "deploymentId:", hint: "Deployment ID"       },
 ];
 
 const FILTER_SUGGESTIONS = {
-  "level:":        ["level:info", "level:warn", "level:error", "level:debug"],
-  "service:":      [],   // user types freely
-  "method:":       ["method:GET", "method:POST", "method:PUT", "method:DELETE", "method:PATCH"],
-  "route:":        [],   // user types freely
-  "status:":       ["status:200", "status:201", "status:400", "status:401", "status:403", "status:404", "status:500", "status:502", "status:503"],
-  "requestId:":    [],
+  "level:":        [
+    "level:INFO", "level:WARN", "level:ERROR", "level:DEBUG",
+  ],
+  "status:":       [
+    "status:200", "status:201", "status:204",
+    "status:400", "status:401", "status:403", "status:404",
+    "status:500", "status:502", "status:503",
+  ],
+  "method:":       [
+    "method:GET", "method:POST", "method:PUT",
+    "method:DELETE", "method:PATCH", "method:OPTIONS",
+  ],
+  "errorType:":    [
+    "errorType:NONE", "errorType:TypeError", "errorType:ReferenceError",
+    "errorType:SyntaxError", "errorType:NetworkError", "errorType:TimeoutError",
+  ],
+  "environment:":  [
+    "environment:production", "environment:staging",
+    "environment:development", "environment:test",
+  ],
+  // free-text fields — user types the value
+  "service:":      [],
+  "route:":        [],
+  "endpoint:":     [],
+  "source:":       [],
+  "responseTime:": [],
   "traceId:":      [],
+  "requestId:":    [],
   "deploymentId:": [],
-  "host:":         [],
 };
 
 /* ──────────────────────────────────────────────
@@ -51,11 +77,14 @@ function saveRecentSearch(query) {
 
 /* ──────────────────────────────────────────────
    Derive which prefix (if any) is being typed
-   e.g. "foo level:" → activePrefix = "level:"
+   e.g. "foo level:" → activePrefix = { label: "level:", hint: "..." }
+   Matching is case-insensitive so "traceId:" and "traceid:" both work.
    ────────────────────────────────────────────── */
 function getActivePrefix(query) {
   const token = query.split(" ").pop().toLowerCase();
-  return FILTER_CHIPS.find((chip) => token.startsWith(chip.toLowerCase())) ?? null;
+  return (
+    FILTER_CHIPS.find((chip) => token.startsWith(chip.label.toLowerCase())) ?? null
+  );
 }
 
 /* ──────────────────────────────────────────────
@@ -126,16 +155,19 @@ function LogToolbar({
 
   /* Append a filter prefix chip (e.g. "level:") to the query */
   const applyChip = useCallback((chip) => {
-    const newVal = searchQuery + chip;
-    onSearchChange(newVal);
+    // chip is a { label, hint } object
+    const prefix = chip.label;
+    const base = searchQuery.endsWith(" ") || searchQuery === "" ? searchQuery : searchQuery + " ";
+    onSearchChange(base + prefix);
     inputRef.current?.focus();
   }, [searchQuery, onSearchChange]);
 
-  /* Replace the current token with a full suggestion (e.g. "level:error") */
+  /* Replace the current token with a full suggestion (e.g. "level:ERROR") and
+     add a trailing space so the user can immediately type the next filter. */
   const applySuggestion = useCallback((suggestion) => {
     const parts = searchQuery.split(" ");
     parts[parts.length - 1] = suggestion;
-    const newVal = parts.join(" ");
+    const newVal = parts.join(" ") + " ";
     onSearchChange(newVal);
     saveRecentSearch(newVal.trim());
     setRecents(getRecentSearches());
@@ -155,8 +187,9 @@ function LogToolbar({
   };
 
   /* What to show in the panel */
+  // activePrefix is a { label, hint } object or null
   const activePrefix = getActivePrefix(searchQuery);
-  const suggestions = activePrefix ? FILTER_SUGGESTIONS[activePrefix] ?? [] : [];
+  const suggestions = activePrefix ? (FILTER_SUGGESTIONS[activePrefix.label] ?? []) : [];
   const showSuggestions = activePrefix !== null;
 
   // Filter recent searches to match the current query if typing (optional UX nicety)
@@ -247,11 +280,17 @@ function LogToolbar({
             {/* Generic filter chips — shown when no prefix is active */}
             {!showSuggestions && (
               <div className="search-panel-section">
-                <span className="search-panel-label">Filters</span>
+                <span className="search-panel-label">Filter by field</span>
                 <div className="search-panel-chips">
                   {FILTER_CHIPS.map((chip) => (
-                    <button key={chip} className="search-chip filter" onMouseDown={() => applyChip(chip)}>
-                      {chip}
+                    <button
+                      key={chip.label}
+                      className="search-chip filter"
+                      title={chip.hint}
+                      onMouseDown={() => applyChip(chip)}
+                    >
+                      <span className="chip-label">{chip.label}</span>
+                      <span className="chip-hint">{chip.hint}</span>
                     </button>
                   ))}
                 </div>

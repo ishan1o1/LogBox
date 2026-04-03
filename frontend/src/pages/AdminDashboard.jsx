@@ -57,12 +57,20 @@ function AdminDashboard() {
      e.g. "level:error method:POST route:/api/login some text"
        → { level:"ERROR", meta:{ method:"POST", route:"/api/login" }, freeText:"some text" }
      Top-level aliases: level, service. Everything else → meta.* */
-  const LEVEL_ALIASES = { warning: "WARN", fatal: "ERROR" };
+  const LEVEL_ALIASES = { warning: "WARN", fatal: "ERROR", critical: "ERROR" };
 
-  // Known meta keys the backend indexes under meta.*
+  // All keys that the backend FIELD_MAP can handle (case-insensitive lowercase)
   const META_KEYS = new Set([
-    "route", "method", "statuscode", "status", "responsetime",
-    "requestid", "traceid", "deploymentid", "host",
+    "route", "method", "endpoint",
+    "statuscode", "status", "statuscode",
+    "responsetime", "responseTime",
+    "requestid", "requestId",
+    "traceid", "traceId",
+    "deploymentid", "deploymentId",
+    "errortype", "errorType",
+    "environment",
+    "source",
+    "host",
   ]);
 
   const parsedSearch = useMemo(() => {
@@ -175,23 +183,36 @@ function AdminDashboard() {
       result = result.filter((l) => l.service?.toLowerCase() === activeService.toLowerCase());
     }
 
-    // Meta key:value filters (method, route, statuscode, etc.)
+    // Key:value filters — fields are stored TOP-LEVEL on the log object,
+    // NOT inside a meta sub-object. Mirror the backend FIELD_MAP here.
+    const CLIENT_FIELD_MAP = {
+      status:        { field: "statusCode",   numeric: true  },
+      statuscode:    { field: "statusCode",   numeric: true  },
+      responsetime:  { field: "responseTime", numeric: true  },
+      method:        { field: "method",       numeric: false },
+      route:         { field: "route",        numeric: false },
+      endpoint:      { field: "endpoint",     numeric: false },
+      requestid:     { field: "requestId",    numeric: false },
+      traceid:       { field: "traceId",      numeric: false },
+      deploymentid:  { field: "deploymentId", numeric: false },
+      errortype:     { field: "errorType",    numeric: false },
+      environment:   { field: "environment",  numeric: false },
+      source:        { field: "source",       numeric: false },
+      host:          { field: "host",         numeric: false },
+    };
+
     for (const [key, value] of Object.entries(parsedSearch.meta)) {
       if (!value) continue;
-      const v = value.toLowerCase();
+      const mapping = CLIENT_FIELD_MAP[key.toLowerCase()];
+      const fieldName = mapping?.field ?? key; // fallback: use key as-is
+
       result = result.filter((l) => {
-        const meta = l.meta || {};
-        // Try exact key and common aliases
-        const candidates = [
-          meta[key],
-          meta[key.replace("code", "Code")],  // statuscode → statusCode
-          meta[key.replace("id", "Id")],       // requestid → requestId
-          meta[key.replace("time", "Time")],   // responsetime → responseTime
-          meta[key.charAt(0).toUpperCase() + key.slice(1)], // capitalized
-        ];
-        return candidates.some(
-          (c) => c != null && String(c).toLowerCase().includes(v)
-        );
+        const fieldVal = l[fieldName];
+        if (fieldVal == null) return false;
+        if (mapping?.numeric) {
+          return Number(fieldVal) === Number(value);
+        }
+        return String(fieldVal).toLowerCase().includes(value.toLowerCase());
       });
     }
 
