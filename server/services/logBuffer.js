@@ -12,20 +12,47 @@ async function flushLogs() {
   logBuffer = [];
 
   try {
-    const body = logsToInsert.flatMap((log) => [
-      { index: { _index: "logs",_id: log.traceId || undefined } },
-      {
-        timestamp: log.timestamp || new Date(),
-        level: log.level || "INFO",
-        source: log.source || "unknown",
-        service: log.service || "general",
-        endpoint: log.endpoint || "",
-        message: log.message || "",
-        statusCode: log.statusCode || 200,
-        errorType: log.errorType || "NONE",
-        traceId: log.traceId || null,
-      },
-    ]);
+    const body = logsToInsert.flatMap((log) => {
+      const meta = (log.meta && typeof log.meta === "object") ? log.meta : {};
+      return [
+        { index: { _index: "logs", _id: log.traceId || undefined } },
+        {
+          timestamp: log.timestamp || new Date(),
+
+          level: log.level || "INFO",
+          message: log.message || "",
+          service: log.service || "general",
+          source: log.source || "unknown",
+
+          // ✅ Prefer meta, fallback to root
+          route: meta.route ?? log.route ?? null,
+          method: meta.method ?? log.method ?? null,
+          endpoint: meta.endpoint ?? log.endpoint ?? null,
+
+          statusCode: meta.statusCode ?? log.statusCode ?? 200,
+          responseTime: meta.responseTime ?? log.responseTime ?? null,
+
+          traceId: meta.traceId ?? log.traceId ?? null,
+          requestId: meta.requestId ?? log.requestId ?? null,
+          deploymentId: meta.deploymentId ?? log.deploymentId ?? null,
+
+          host: meta.host ?? log.host ?? null,
+
+          errorType: log.errorType ?? meta.errorType ?? "NONE",
+
+          // Optional
+          stack: meta.stack ?? log.stack ?? null,
+          environment: log.environment ?? "unknown",
+
+          // RCA fields
+          eventType: meta.eventType ?? log.eventType ?? "GENERAL",
+          dependency: meta.dependency ?? log.dependency ?? null,
+          errorFingerprint: meta.errorFingerprint ?? log.errorFingerprint ?? null,
+          severityScore: meta.severityScore ?? log.severityScore ?? 1,
+          stage: meta.stage ?? log.stage ?? null,
+        },
+      ]
+    });
 
     const response = await client.bulk({ refresh: true, body });
 
