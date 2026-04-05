@@ -104,7 +104,7 @@ function LogTable({ logs, hasMore, loading, onLoadMore }) {
 function LogDetailPanel({ log }) {
   const [copied, setCopied] = useState(false);
 
-  const meta = log.meta || {};
+  const meta = log.meta || log;
   const rawJson = JSON.stringify(log, null, 2);
 
   const level = String(log.level || "").toLowerCase();

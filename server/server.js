@@ -8,7 +8,7 @@ const {addLog} = require("./services/logBuffer");
 const Log = require("./models/log")
 const createLogsIndex = require("./utils/createIndex");
 const app = express();
-
+const rcaRoutes = require("./modules/rca/rca.routes")
 const server = http.createServer(app);
 
 const io = new Server(server, {
@@ -18,6 +18,8 @@ app.set("io",io);
 
 app.use(cors());
 app.use(express.json());
+
+app.use("/rca",rcaRoutes);
 const client = require("./config/elasticsearch");
 
 (async () => {
@@ -68,23 +70,23 @@ app.get("/logs", async (req, res) => {
       service,
       start,
       end,
-      page  = 1,
+      page = 1,
       limit = 100,
       search,
-      ...rest              // all other params, including meta.* keys
+      ...rest
     } = req.query;
+    const { type } = req.query;
 
+if (type) {
+  must.push({ term: { type } });
+}
     const must = [];
 
-    /* ── Top-level exact filters ── */
-    if (level)   must.push({ term: { level: level.toUpperCase() } });
+    if (level) {
+  must.push({ term: { level: level.toLowerCase() } });
+}
     if (service) must.push({ term: { service } });
 
-    /* ── Free-text search ──────────────────────────────────────────────────
-       'message' is a text field   → phrase_prefix is fine
-       'service' is a keyword field → use wildcard instead
-       We combine them in a should so either match counts.
-    ──────────────────────────────────────────────────────────────────────── */
     if (search) {
       must.push({
         bool: {
@@ -97,7 +99,7 @@ app.get("/logs", async (req, res) => {
             {
               wildcard: {
                 service: {
-                  value:            `*${search.toLowerCase()}*`,
+                  value: `*${search.toLowerCase()}*`,
                   case_insensitive: true,
                 },
               },
@@ -105,7 +107,7 @@ app.get("/logs", async (req, res) => {
             {
               wildcard: {
                 level: {
-                  value:            `*${search.toUpperCase()}*`,
+                  value: `*${search.toLowerCase()}*`,
                   case_insensitive: true,
                 },
               },
@@ -116,94 +118,20 @@ app.get("/logs", async (req, res) => {
       });
     }
 
-    /* ── Time range ── */
     if (start || end) {
       const range = {};
       if (start) range.gte = start;
-      if (end)   range.lte = end;
-      must.push({ range: { timestamp: range } });
+      if (end) range.lte = end;
+      must.push({ range: { "@timestamp": range } });
     }
 
-    /* ── key:value filters ────────────────────────────────────────────────
-       The frontend sends tokens like  statuscode:200  as  meta.statuscode=200.
-       All searchable fields are stored at the TOP LEVEL in Elasticsearch
-       (not under a meta sub-object). This map resolves lowercase aliases to
-       the correct camelCase ES field name.
-
-         statuscode / status  → statusCode   (integer)
-         responsetime         → responseTime (integer)
-         method               → method       (keyword)
-         route                → route        (keyword)
-         endpoint             → endpoint     (keyword)
-         requestid            → requestId    (keyword)
-         traceid              → traceId      (keyword)
-         deploymentid         → deploymentId (keyword)
-         errortype            → errorType    (keyword)
-         environment          → environment  (keyword)
-         source               → source       (keyword)
-         host                 → host         (keyword)  ← if stored
-    ──────────────────────────────────────────────────────────────────── */
-    const FIELD_MAP = {
-      // numeric
-      statuscode:    { field: "statusCode",   numeric: true  },
-      status:        { field: "statusCode",   numeric: true  },
-      responsetime:  { field: "responseTime", numeric: true  },
-      // keyword
-      method:        { field: "method",       numeric: false },
-      route:         { field: "route",        numeric: false },
-      endpoint:      { field: "endpoint",     numeric: false },
-      requestid:     { field: "requestId",    numeric: false },
-      traceid:       { field: "traceId",      numeric: false },
-      deploymentid:  { field: "deploymentId", numeric: false },
-      errortype:     { field: "errorType",    numeric: false },
-      environment:   { field: "environment",  numeric: false },
-      source:        { field: "source",       numeric: false },
-      host:          { field: "host",         numeric: false },
-    };
-
-    for (const [param, value] of Object.entries(rest)) {
-      if (!param.startsWith("meta.") || !value) continue;
-      const rawKey = param.slice(5).toLowerCase();   // strip "meta." prefix
-      const mapping = FIELD_MAP[rawKey];
-
-      if (mapping) {
-        if (mapping.numeric) {
-          const num = Number(value);
-          if (!isNaN(num)) {
-            must.push({ term: { [mapping.field]: num } });
-          }
-        } else {
-          // keyword — wildcard for partial/case-insensitive match
-          must.push({
-            wildcard: {
-              [mapping.field]: {
-                value:            `*${value.toLowerCase()}*`,
-                case_insensitive: true,
-              },
-            },
-          });
-        }
-      } else {
-        // Unknown key — pass through as-is (best-effort wildcard)
-        const esField = param.slice(5); // strip "meta." but keep original casing
-        must.push({
-          wildcard: {
-            [esField]: {
-              value:            `*${value.toLowerCase()}*`,
-              case_insensitive: true,
-            },
-          },
-        });
-      }
-    }
-
-    /* ── Execute ── */
     const from = (parseInt(page) - 1) * parseInt(limit);
+
     const result = await client.search({
-      index: "logs",
+      index: "logstash-*",
       from,
-      size:  parseInt(limit),
-      sort:  [{ timestamp: { order: "desc" } }],
+      size: parseInt(limit),
+      sort: [{ "@timestamp": { order: "desc" } }],
       query: must.length > 0
         ? { bool: { must } }
         : { match_all: {} },
