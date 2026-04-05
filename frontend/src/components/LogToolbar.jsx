@@ -1,62 +1,53 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import "../styles/LogToolbar.css";
 
-/* ──────────────────────────────────────────────
-   Filter chips + their contextual value suggestions
-   ────────────────────────────────────────────── */
-// All searchable fields that exist in actual log documents.
-// Keys must match what the backend FIELD_MAP understands (case-insensitive).
 const FILTER_CHIPS = [
-  { label: "level:",        hint: "Log level"          },
-  { label: "service:",      hint: "Service name"        },
-  { label: "status:",       hint: "HTTP status code"    },
-  { label: "method:",       hint: "HTTP method"         },
-  { label: "route:",        hint: "Request route"       },
-  { label: "endpoint:",     hint: "Endpoint path"       },
-  { label: "errorType:",    hint: "Error type"          },
-  { label: "environment:",  hint: "Deploy environment"  },
-  { label: "source:",       hint: "Log source"          },
+  { label: "level:", hint: "Log level" },
+  { label: "service:", hint: "Service name" },
+  { label: "module:", hint: "Module name" },
+  { label: "status:", hint: "HTTP status code" },
+  { label: "method:", hint: "HTTP method" },
+  { label: "route:", hint: "Request route" },
+  { label: "endpoint:", hint: "Endpoint path" },
+  { label: "errorType:", hint: "Error type" },
+  { label: "environment:", hint: "Deploy environment" },
+  { label: "source:", hint: "Log source" },
   { label: "responseTime:", hint: "Response time (ms)" },
-  { label: "traceId:",      hint: "Trace ID"            },
-  { label: "requestId:",    hint: "Request ID"          },
-  { label: "deploymentId:", hint: "Deployment ID"       },
+  { label: "traceId:", hint: "Trace ID" },
+  { label: "requestId:", hint: "Request ID" },
+  { label: "deploymentId:", hint: "Deployment ID" },
 ];
 
 const FILTER_SUGGESTIONS = {
-  "level:":        [
-    "level:INFO", "level:WARN", "level:ERROR", "level:DEBUG",
-  ],
-  "status:":       [
+  "level:": ["level:INFO", "level:WARN", "level:ERROR", "level:DEBUG"],
+  "status:": [
     "status:200", "status:201", "status:204",
     "status:400", "status:401", "status:403", "status:404",
     "status:500", "status:502", "status:503",
   ],
-  "method:":       [
+  "method:": [
     "method:GET", "method:POST", "method:PUT",
     "method:DELETE", "method:PATCH", "method:OPTIONS",
   ],
-  "errorType:":    [
+  "errorType:": [
     "errorType:NONE", "errorType:TypeError", "errorType:ReferenceError",
     "errorType:SyntaxError", "errorType:NetworkError", "errorType:TimeoutError",
   ],
-  "environment:":  [
+  "environment:": [
     "environment:production", "environment:staging",
     "environment:development", "environment:test",
   ],
-  // free-text fields — user types the value
-  "service:":      [],
-  "route:":        [],
-  "endpoint:":     [],
-  "source:":       [],
+  "service:": [],
+  "module:": [],
+  "route:": [],
+  "endpoint:": [],
+  "source:": [],
   "responseTime:": [],
-  "traceId:":      [],
-  "requestId:":    [],
+  "traceId:": [],
+  "requestId:": [],
   "deploymentId:": [],
 };
 
-/* ──────────────────────────────────────────────
-   Recent-search helpers (localStorage)
-   ────────────────────────────────────────────── */
 const RECENT_KEY = "logbox_recent_searches";
 const MAX_RECENT = 8;
 
@@ -75,26 +66,18 @@ function saveRecentSearch(query) {
   localStorage.setItem(RECENT_KEY, JSON.stringify(next));
 }
 
-/* ──────────────────────────────────────────────
-   Derive which prefix (if any) is being typed
-   e.g. "foo level:" → activePrefix = { label: "level:", hint: "..." }
-   Matching is case-insensitive so "traceId:" and "traceid:" both work.
-   ────────────────────────────────────────────── */
 function getActivePrefix(query) {
   const token = query.split(" ").pop().toLowerCase();
-  return (
-    FILTER_CHIPS.find((chip) => token.startsWith(chip.label.toLowerCase())) ?? null
-  );
+  return FILTER_CHIPS.find((chip) => token.startsWith(chip.label.toLowerCase())) ?? null;
 }
 
-/* ──────────────────────────────────────────────
-   Component
-   ────────────────────────────────────────────── */
 function LogToolbar({
   searchQuery,
   onSearchChange,
   isLive,
   onToggleLive,
+  viewMode,
+  onToggleGrouped,
   onRefresh,
   onExport,
   loading,
@@ -107,7 +90,6 @@ function LogToolbar({
   const [showPanel, setShowPanel] = useState(false);
   const [recents, setRecents] = useState([]);
 
-  /* Keyboard shortcut Ctrl/Cmd+K */
   useEffect(() => {
     const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -119,9 +101,8 @@ function LogToolbar({
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  /* Close panel on outside click */
   useEffect(() => {
-    if (!showPanel) return;
+    if (!showPanel) return undefined;
     const handler = (e) => {
       if (panelRef.current && !panelRef.current.contains(e.target)) {
         setShowPanel(false);
@@ -153,21 +134,17 @@ function LogToolbar({
     }
   };
 
-  /* Append a filter prefix chip (e.g. "level:") to the query */
   const applyChip = useCallback((chip) => {
-    // chip is a { label, hint } object
     const prefix = chip.label;
-    const base = searchQuery.endsWith(" ") || searchQuery === "" ? searchQuery : searchQuery + " ";
+    const base = searchQuery.endsWith(" ") || searchQuery === "" ? searchQuery : `${searchQuery} `;
     onSearchChange(base + prefix);
     inputRef.current?.focus();
   }, [searchQuery, onSearchChange]);
 
-  /* Replace the current token with a full suggestion (e.g. "level:ERROR") and
-     add a trailing space so the user can immediately type the next filter. */
   const applySuggestion = useCallback((suggestion) => {
     const parts = searchQuery.split(" ");
     parts[parts.length - 1] = suggestion;
-    const newVal = parts.join(" ") + " ";
+    const newVal = `${parts.join(" ")} `;
     onSearchChange(newVal);
     saveRecentSearch(newVal.trim());
     setRecents(getRecentSearches());
@@ -186,13 +163,10 @@ function LogToolbar({
     inputRef.current?.focus();
   };
 
-  /* What to show in the panel */
-  // activePrefix is a { label, hint } object or null
   const activePrefix = getActivePrefix(searchQuery);
   const suggestions = activePrefix ? (FILTER_SUGGESTIONS[activePrefix.label] ?? []) : [];
   const showSuggestions = activePrefix !== null;
 
-  // Filter recent searches to match the current query if typing (optional UX nicety)
   const filteredRecents = searchQuery
     ? recents.filter((r) => r.toLowerCase().includes(searchQuery.toLowerCase()) && r !== searchQuery)
     : recents;
@@ -201,7 +175,6 @@ function LogToolbar({
 
   return (
     <div className="toolbar">
-      {/* Left icons — filter toggle */}
       <div className="toolbar-left">
         {!sidebarOpen && (
           <button className="toolbar-icon-btn" onClick={onToggleSidebar} title="Open filters">
@@ -216,7 +189,6 @@ function LogToolbar({
         )}
       </div>
 
-      {/* Search bar + suggestions panel */}
       <div className="toolbar-search-wrap" ref={panelRef}>
         <div className={`toolbar-search ${focused ? "focused" : ""}`}>
           <svg className="toolbar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -245,11 +217,8 @@ function LogToolbar({
           )}
         </div>
 
-        {/* Suggestions panel */}
         {showPanel && hasContent && (
           <div className="search-panel">
-
-            {/* Recent searches — only when not in contextual-suggestion mode */}
             {!showSuggestions && filteredRecents.length > 0 && (
               <div className="search-panel-section">
                 <span className="search-panel-label">Recent searches</span>
@@ -263,7 +232,6 @@ function LogToolbar({
               </div>
             )}
 
-            {/* Contextual value suggestions — shown when a prefix is active */}
             {showSuggestions && suggestions.length > 0 && (
               <div className="search-panel-section">
                 <span className="search-panel-label">Suggestions</span>
@@ -277,7 +245,6 @@ function LogToolbar({
               </div>
             )}
 
-            {/* Generic filter chips — shown when no prefix is active */}
             {!showSuggestions && (
               <div className="search-panel-section">
                 <span className="search-panel-label">Filter by field</span>
@@ -300,7 +267,6 @@ function LogToolbar({
         )}
       </div>
 
-      {/* Right actions */}
       <div className="toolbar-right">
         <button className={`toolbar-live ${isLive ? "on" : ""}`} onClick={onToggleLive}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -308,6 +274,20 @@ function LogToolbar({
             {isLive && <circle cx="6" cy="6" r="2" fill="currentColor"/>}
           </svg>
           <span>Live</span>
+        </button>
+
+        <button
+          className={`toolbar-live ${viewMode === "grouped" ? "on" : ""}`}
+          onClick={onToggleGrouped}
+          title="Toggle grouped incidents"
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <rect x="2.25" y="2.25" width="4.5" height="4.5" rx="1" />
+            <rect x="9.25" y="2.25" width="4.5" height="4.5" rx="1" />
+            <rect x="2.25" y="9.25" width="4.5" height="4.5" rx="1" />
+            <rect x="9.25" y="9.25" width="4.5" height="4.5" rx="1" />
+          </svg>
+          <span>Group Logs</span>
         </button>
 
         <button className={`toolbar-icon-btn ${loading ? "spin" : ""}`} onClick={onRefresh} title="Refresh">

@@ -336,3 +336,73 @@
   .lt-h-request, .lt-c-request { display: none; }
   .lt-h-time, .lt-c-time { width: 80px; }
 }
+
+.lt-incident-table-wrap {
+  padding: 16px;
+  overflow-x: auto;
+}
+
+.lt-incident-table {
+  width: 100%;
+  min-width: 880px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.lt-incident-table th,
+.lt-incident-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+
+.lt-incident-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-base);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.lt-incident-table td {
+  color: var(--text-secondary);
+}
+
+.lt-incident-table td:first-child {
+  max-width: 320px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.lt-incident-severity {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  text-transform: capitalize;
+  font-weight: 600;
+}
+
+.lt-incident-severity.severity-critical {
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.lt-incident-severity.severity-high {
+  color: #fb923c;
+  border-color: rgba(249, 115, 22, 0.35);
+  background: rgba(249, 115, 22, 0.08);
+}
+
+.lt-incident-severity.severity-medium {
+  color: #facc15;
+  border-color: rgba(234, 179, 8, 0.35);
+  background: rgba(234, 179, 8, 0.08);
+}

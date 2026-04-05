@@ -14,24 +14,45 @@ const SOCKET_URL = "http://localhost:4000";
 
 const DURATION_MS = {
   "30m": 30 * 60 * 1000,
-  "1h":  60 * 60 * 1000,
-  "6h":  6  * 60 * 60 * 1000,
+  "1h": 60 * 60 * 1000,
+  "6h": 6 * 60 * 60 * 1000,
   "12h": 12 * 60 * 60 * 1000,
-  "1d":  24 * 60 * 60 * 1000,
-  "3d":  3  * 24 * 60 * 60 * 1000,
-  "7d":  7  * 24 * 60 * 60 * 1000,
+  "1d": 24 * 60 * 60 * 1000,
+  "3d": 3 * 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
   "14d": 14 * 24 * 60 * 60 * 1000,
+};
+
+const LEVEL_ALIASES = { warning: "WARN", fatal: "ERROR", critical: "ERROR" };
+
+const CLIENT_FIELD_MAP = {
+  status: { field: "statusCode", numeric: true },
+  statuscode: { field: "statusCode", numeric: true },
+  responsetime: { field: "responseTime", numeric: true },
+  method: { field: "method", numeric: false },
+  route: { field: "route", numeric: false },
+  endpoint: { field: "endpoint", numeric: false },
+  requestid: { field: "requestId", numeric: false },
+  traceid: { field: "traceId", numeric: false },
+  deploymentid: { field: "deploymentId", numeric: false },
+  errortype: { field: "errorType", numeric: false },
+  environment: { field: "environment", numeric: false },
+  source: { field: "source", numeric: false },
+  host: { field: "host", numeric: false },
+  module: { field: "module", numeric: false },
 };
 
 function AdminDashboard() {
   const { user, logout } = useContext(AuthContext);
 
   const [logs, setLogs] = useState([]);
+  const [incidents, setIncidents] = useState([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isLive, setIsLive] = useState(true);
+  const [viewMode, setViewMode] = useState("raw");
   const [searchQuery, setSearchQuery] = useState("");
 
   const [filters, setFilters] = useState({
@@ -46,168 +67,156 @@ function AdminDashboard() {
     _userName: user?.name || "user",
   });
 
-  /* Derived start time */
   const startTime = useMemo(() => {
     if (filters.duration === "ALL") return null;
     const ms = DURATION_MS[filters.duration];
     return ms ? new Date(Date.now() - ms).toISOString() : null;
   }, [filters.duration]);
 
-  /* Parse ALL key:value tokens from the search string.
-     e.g. "level:error method:POST route:/api/login some text"
-       → { level:"ERROR", meta:{ method:"POST", route:"/api/login" }, freeText:"some text" }
-     Top-level aliases: level, service. Everything else → meta.* */
-  const LEVEL_ALIASES = { warning: "WARN", fatal: "ERROR", critical: "ERROR" };
-
-  // All keys that the backend FIELD_MAP can handle (case-insensitive lowercase)
-  const META_KEYS = new Set([
-    "route", "method", "endpoint",
-    "statuscode", "status", "statuscode",
-    "responsetime", "responseTime",
-    "requestid", "requestId",
-    "traceid", "traceId",
-    "deploymentid", "deploymentId",
-    "errortype", "errorType",
-    "environment",
-    "source",
-    "host",
-  ]);
-
   const parsedSearch = useMemo(() => {
     const result = { level: null, service: null, meta: {}, freeText: "" };
     const freeTokens = [];
+
     for (const token of searchQuery.trim().split(/\s+/)) {
       if (!token) continue;
       const colonIdx = token.indexOf(":");
       if (colonIdx > 0) {
-        const key   = token.slice(0, colonIdx).toLowerCase();
+        const key = token.slice(0, colonIdx).toLowerCase();
         const value = token.slice(colonIdx + 1);
-        if (!value) { freeTokens.push(token); continue; }
+        if (!value) {
+          freeTokens.push(token);
+          continue;
+        }
         if (key === "level") {
           const raw = value.toUpperCase();
           result.level = LEVEL_ALIASES[raw.toLowerCase()] ?? raw;
         } else if (key === "service") {
           result.service = value;
         } else {
-          // Any other key goes into meta filters
           result.meta[key] = value;
         }
       } else {
         freeTokens.push(token);
       }
     }
+
     result.freeText = freeTokens.join(" ");
     return result;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
 
-  /* Fetch */
   const fetchPage = useCallback(async (pageNum, reset = false) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: pageNum, limit: PAGE_SIZE });
       if (startTime) params.set("start", startTime);
 
-      // Level / service: parsed token wins over sidebar checkboxes
       const levelParam = parsedSearch.level || (filters.levels?.length === 1 ? filters.levels[0] : null);
       const serviceParam = parsedSearch.service || filters.service || null;
+
       if (parsedSearch.freeText) params.set("search", parsedSearch.freeText);
-      if (levelParam)   params.set("level",   levelParam);
+      if (levelParam) params.set("level", levelParam);
       if (serviceParam) params.set("service", serviceParam);
 
-      // Send every meta key:value pair as meta.<key>=<value>
-      for (const [k, v] of Object.entries(parsedSearch.meta)) {
-        if (v) params.set(`meta.${k}`, v);
+      for (const [key, value] of Object.entries(parsedSearch.meta)) {
+        if (value) params.set(`meta.${key}`, value);
       }
 
-      const res = await fetch(`${SOCKET_URL}/logs?${params}`);
+      const res = await fetch(`${SOCKET_URL}/logs?${params.toString()}`);
       const data = await res.json();
       setLogs((prev) => (reset ? data : [...prev, ...data]));
-      setHasMore(data.length === PAGE_SIZE);
+      setHasMore(Array.isArray(data) && data.length === PAGE_SIZE);
     } catch (err) {
       console.error("Fetch error:", err);
     } finally {
       setLoading(false);
     }
-  }, [startTime, parsedSearch, filters.levels, filters.service]);
+  }, [filters.levels, filters.service, parsedSearch, startTime]);
+
+  const fetchIncidents = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      const levelParam = parsedSearch.level || (filters.levels?.length === 1 ? filters.levels[0] : null);
+      const routeParam = parsedSearch.meta.route || filters.route || "";
+      const moduleParam = parsedSearch.meta.module || "";
+
+      if (levelParam) params.set("level", levelParam.toLowerCase());
+      if (routeParam) params.set("route", routeParam);
+      if (moduleParam) params.set("module", moduleParam);
+      if (startTime) params.set("from", startTime);
+      params.set("to", new Date().toISOString());
+
+      const res = await fetch(`${SOCKET_URL}/rca/incidents?${params.toString()}`);
+      const data = await res.json();
+      setIncidents(data.incidents || []);
+      setHasMore(false);
+    } catch (err) {
+      console.error("Fetch incidents error:", err);
+      setIncidents([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [filters.levels, filters.route, parsedSearch.level, parsedSearch.meta.module, parsedSearch.meta.route, startTime]);
 
   useEffect(() => {
     setPage(1);
+    if (viewMode === "grouped") {
+      fetchIncidents();
+      return;
+    }
     fetchPage(1, true);
-  }, [fetchPage]);
+  }, [fetchIncidents, fetchPage, viewMode]);
 
-  /* Socket.io */
   useEffect(() => {
-    if (!isLive) return;
+    if (!isLive || viewMode !== "raw") return undefined;
     const socket = io(SOCKET_URL, { transports: ["websocket"] });
     socket.on("new-log", (log) => {
-      if (startTime && new Date(log.timestamp) < new Date(startTime)) return;
+      const logTimestamp = log.timestamp || log["@timestamp"];
+      if (startTime && logTimestamp && new Date(logTimestamp) < new Date(startTime)) return;
       setLogs((prev) => [log, ...prev]);
     });
     return () => socket.disconnect();
-  }, [startTime, isLive]);
+  }, [isLive, startTime, viewMode]);
 
-  /* Handlers */
   const handleLoadMore = useCallback(() => {
+    if (viewMode === "grouped") {
+      fetchIncidents();
+      return;
+    }
     const next = page + 1;
     setPage(next);
     fetchPage(next, false);
-  }, [page, fetchPage]);
+  }, [fetchIncidents, fetchPage, page, viewMode]);
 
-  const handleRefresh = () => { setPage(1); fetchPage(1, true); };
+  const handleRefresh = useCallback(() => {
+    setPage(1);
+    if (viewMode === "grouped") {
+      fetchIncidents();
+      return;
+    }
+    fetchPage(1, true);
+  }, [fetchIncidents, fetchPage, viewMode]);
 
-  const handleExport = () => {
-    const json = JSON.stringify(filteredLogs, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `logbox-${new Date().toISOString().slice(0, 19)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  /* Client-side filter — mirrors server-side logic for live-streamed logs */
   const filteredLogs = useMemo(() => {
     let result = logs;
 
-    // Level
     const activeLevels = parsedSearch.level ? [parsedSearch.level] : filters.levels;
     if (activeLevels.length > 0) {
-      result = result.filter((l) => activeLevels.includes(l.level?.toUpperCase()));
+      result = result.filter((log) => activeLevels.includes(log.level?.toUpperCase()));
     }
 
-    // Service
     const activeService = parsedSearch.service || filters.service;
     if (activeService) {
-      result = result.filter((l) => l.service?.toLowerCase() === activeService.toLowerCase());
+      result = result.filter((log) => log.service?.toLowerCase() === activeService.toLowerCase());
     }
-
-    // Key:value filters — fields are stored TOP-LEVEL on the log object,
-    // NOT inside a meta sub-object. Mirror the backend FIELD_MAP here.
-    const CLIENT_FIELD_MAP = {
-      status:        { field: "statusCode",   numeric: true  },
-      statuscode:    { field: "statusCode",   numeric: true  },
-      responsetime:  { field: "responseTime", numeric: true  },
-      method:        { field: "method",       numeric: false },
-      route:         { field: "route",        numeric: false },
-      endpoint:      { field: "endpoint",     numeric: false },
-      requestid:     { field: "requestId",    numeric: false },
-      traceid:       { field: "traceId",      numeric: false },
-      deploymentid:  { field: "deploymentId", numeric: false },
-      errortype:     { field: "errorType",    numeric: false },
-      environment:   { field: "environment",  numeric: false },
-      source:        { field: "source",       numeric: false },
-      host:          { field: "host",         numeric: false },
-    };
 
     for (const [key, value] of Object.entries(parsedSearch.meta)) {
       if (!value) continue;
       const mapping = CLIENT_FIELD_MAP[key.toLowerCase()];
-      const fieldName = mapping?.field ?? key; // fallback: use key as-is
+      const fieldName = mapping?.field ?? key;
 
-      result = result.filter((l) => {
-        const fieldVal = l[fieldName];
+      result = result.filter((log) => {
+        const fieldVal = log[fieldName] ?? log.meta?.[fieldName];
         if (fieldVal == null) return false;
         if (mapping?.numeric) {
           return Number(fieldVal) === Number(value);
@@ -216,22 +225,35 @@ function AdminDashboard() {
       });
     }
 
-    // Free text against message + service
     if (parsedSearch.freeText) {
-      const q = parsedSearch.freeText.toLowerCase();
-      result = result.filter((l) =>
-        l.message?.toLowerCase().includes(q) ||
-        l.service?.toLowerCase().includes(q)
+      const query = parsedSearch.freeText.toLowerCase();
+      result = result.filter((log) =>
+        log.message?.toLowerCase().includes(query) ||
+        log.service?.toLowerCase().includes(query)
       );
     }
 
     return result;
-  }, [logs, filters.levels, filters.service, parsedSearch]);
+  }, [filters.levels, filters.service, logs, parsedSearch]);
 
-  /* Per-level counts for sidebar badges */
+  const handleExport = () => {
+    const payload = viewMode === "grouped" ? incidents : filteredLogs;
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const suffix = viewMode === "grouped" ? "incidents" : "logs";
+    a.href = url;
+    a.download = `logbox-${suffix}-${new Date().toISOString().slice(0, 19)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const logCounts = useMemo(() => {
     const counts = { WARN: 0, ERROR: 0, DEBUG: 0 };
-    logs.forEach((l) => { if (counts[l.level] !== undefined) counts[l.level]++; });
+    logs.forEach((log) => {
+      if (counts[log.level] !== undefined) counts[log.level] += 1;
+    });
     return counts;
   }, [logs]);
 
@@ -242,7 +264,7 @@ function AdminDashboard() {
       <div className="vdash-body">
         <Sidebar
           isOpen={sidebarOpen}
-          onToggle={() => setSidebarOpen((p) => !p)}
+          onToggle={() => setSidebarOpen((prev) => !prev)}
           filters={filters}
           onFilterChange={setFilters}
           logCounts={logCounts}
@@ -253,7 +275,9 @@ function AdminDashboard() {
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             isLive={isLive}
-            onToggleLive={() => setIsLive((p) => !p)}
+            onToggleLive={() => setIsLive((prev) => !prev)}
+            viewMode={viewMode}
+            onToggleGrouped={() => setViewMode((prev) => (prev === "grouped" ? "raw" : "grouped"))}
             onRefresh={handleRefresh}
             onExport={handleExport}
             loading={loading}
@@ -262,10 +286,11 @@ function AdminDashboard() {
           />
 
           <LogTable
-            logs={filteredLogs}
+            logs={viewMode === "grouped" ? incidents : filteredLogs}
             hasMore={hasMore}
             loading={loading}
             onLoadMore={handleLoadMore}
+            viewMode={viewMode}
           />
         </main>
       </div>

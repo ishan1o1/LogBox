@@ -11,25 +11,32 @@ function fmtTime(ts) {
   );
 }
 
-/* ─────────────────────── Main table ─────────────────────── */
-function LogTable({ logs, hasMore, loading, onLoadMore }) {
+function fmtDateTime(ts) {
+  if (!ts) return "-";
+  return new Date(ts).toLocaleString();
+}
+
+function LogTable({ logs, hasMore, loading, onLoadMore, viewMode = "raw" }) {
   const [expandedRow, setExpandedRow] = useState(null);
   const tableRef = useRef(null);
+  const isGroupedView = viewMode === "grouped";
 
   const toggleRow = (idx) => setExpandedRow((prev) => (prev === idx ? null : idx));
 
-  /* Infinite scroll */
   useEffect(() => {
+    if (isGroupedView) return undefined;
     const el = tableRef.current;
-    if (!el) return;
+    if (!el) return undefined;
+
     const handler = () => {
       if (el.scrollTop + el.clientHeight >= el.scrollHeight - 60 && hasMore && !loading) {
         onLoadMore();
       }
     };
+
     el.addEventListener("scroll", handler);
     return () => el.removeEventListener("scroll", handler);
-  }, [hasMore, loading, onLoadMore]);
+  }, [hasMore, isGroupedView, loading, onLoadMore]);
 
   if (logs.length === 0 && !loading) {
     return (
@@ -41,7 +48,9 @@ function LogTable({ logs, hasMore, loading, onLoadMore }) {
             <line x1="15" y1="9" x2="9" y2="15" />
           </svg>
         </div>
-        <p className="lt-empty-title">There are no runtime logs in this time range</p>
+        <p className="lt-empty-title">
+          {isGroupedView ? "There are no grouped incidents for this filter set" : "There are no runtime logs in this time range"}
+        </p>
         <div className="lt-empty-actions">
           <button className="lt-empty-btn primary" onClick={onLoadMore}>Refresh Query</button>
           <button className="lt-empty-btn">Learn More</button>
@@ -52,55 +61,96 @@ function LogTable({ logs, hasMore, loading, onLoadMore }) {
 
   return (
     <div className="lt-wrap" ref={tableRef}>
-      {/* Timeline bar */}
-      <div className="lt-timeline-bar">
-        <div className="lt-timeline-line" />
-      </div>
-
-      {/* Column headers */}
-      <div className="lt-header">
-        <span className="lt-h lt-h-time">Time</span>
-        <span className="lt-h lt-h-status">Status</span>
-        <span className="lt-h lt-h-host">Host</span>
-        <span className="lt-h lt-h-request">Request</span>
-        <span className="lt-h lt-h-message">Messages</span>
-      </div>
-
-      {/* Rows */}
-      <div className="lt-rows">
-        {logs.map((log, idx) => (
-          <div key={log._id || idx} className="lt-row-wrap">
-            <button
-              className={`lt-row ${expandedRow === idx ? "expanded" : ""}`}
-              onClick={() => toggleRow(idx)}
-            >
-              <span className="lt-c lt-c-time">{fmtTime(log.timestamp)}</span>
-              <span className="lt-c lt-c-status">{log.level}</span>
-              <span className="lt-c lt-c-host">{log.service || "—"}</span>
-              <span className="lt-c lt-c-request">{log.meta?.route || log.meta?.method || "—"}</span>
-              <span className="lt-c lt-c-message">{log.message}</span>
-            </button>
-
-            {expandedRow === idx && <LogDetailPanel log={log} />}
+      {!isGroupedView && (
+        <>
+          <div className="lt-timeline-bar">
+            <div className="lt-timeline-line" />
           </div>
-        ))}
+
+          <div className="lt-header">
+            <span className="lt-h lt-h-time">Time</span>
+            <span className="lt-h lt-h-status">Status</span>
+            <span className="lt-h lt-h-host">Host</span>
+            <span className="lt-h lt-h-request">Request</span>
+            <span className="lt-h lt-h-message">Messages</span>
+          </div>
+        </>
+      )}
+
+      <div className="lt-rows">
+        {isGroupedView ? (
+          <IncidentTable incidents={logs} />
+        ) : (
+          logs.map((log, idx) => (
+            <div key={log._id || idx} className="lt-row-wrap">
+              <button
+                className={`lt-row ${expandedRow === idx ? "expanded" : ""}`}
+                onClick={() => toggleRow(idx)}
+              >
+                <span className="lt-c lt-c-time">{fmtTime(log.timestamp)}</span>
+                <span className="lt-c lt-c-status">{log.level}</span>
+                <span className="lt-c lt-c-host">{log.service || "-"}</span>
+                <span className="lt-c lt-c-request">{log.meta?.route || log.route || log.meta?.method || log.method || "-"}</span>
+                <span className="lt-c lt-c-message">{log.message}</span>
+              </button>
+
+              {expandedRow === idx && <LogDetailPanel log={log} />}
+            </div>
+          ))
+        )}
 
         {loading && (
           <div className="lt-loading">
             <div className="lt-spinner" />
-            <span>Loading…</span>
+            <span>Loading...</span>
           </div>
         )}
 
-        {!hasMore && logs.length > 0 && (
-          <div className="lt-end">All logs loaded — {logs.length.toLocaleString()} total</div>
+        {!isGroupedView && !hasMore && logs.length > 0 && (
+          <div className="lt-end">All logs loaded - {logs.length.toLocaleString()} total</div>
         )}
       </div>
     </div>
   );
 }
 
-/* ─────────────────────── Enriched detail panel ─────────────────────── */
+function IncidentTable({ incidents }) {
+  return (
+    <div className="lt-incident-table-wrap">
+      <table className="lt-incident-table">
+        <thead>
+          <tr>
+            <th>Error</th>
+            <th>Count</th>
+            <th>Route</th>
+            <th>Method</th>
+            <th>First Seen</th>
+            <th>Last Seen</th>
+            <th>Severity</th>
+          </tr>
+        </thead>
+        <tbody>
+          {incidents.map((incident) => (
+            <tr key={incident.fingerprint}>
+              <td>{incident.title}</td>
+              <td>{incident.count}</td>
+              <td>{incident.route || "-"}</td>
+              <td>{incident.method || "-"}</td>
+              <td>{fmtDateTime(incident.firstSeen)}</td>
+              <td>{fmtDateTime(incident.lastSeen)}</td>
+              <td>
+                <span className={`lt-incident-severity severity-${String(incident.severity || "high").toLowerCase()}`}>
+                  {incident.severity || "high"}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function LogDetailPanel({ log }) {
   const [copied, setCopied] = useState(false);
 
@@ -122,18 +172,16 @@ function LogDetailPanel({ log }) {
     });
   };
 
-  /* Resolve fields with fallback aliases */
-  const statusCode = meta.statusCode  ?? meta.status      ?? meta.statuscode  ?? null;
-  const method     = meta.method      ?? meta.requestMethod                   ?? null;
-  const route      = meta.route       ?? meta.path         ?? meta.url        ?? null;
-  const host       = meta.host        ?? log.service                          ?? null;
-  const requestId  = meta.requestId   ?? meta.request_id                      ?? null;
-  const traceId    = meta.traceId     ?? meta.trace_id                        ?? null;
-  const deployId   = meta.deploymentId ?? meta.deployId   ?? meta.deployment_id ?? null;
-  const respTime   = meta.responseTime ?? meta.duration   ?? meta.latency     ?? null;
-  const stackTrace = meta.stack       ?? meta.stackTrace   ?? log.stack        ?? null;
+  const statusCode = meta.statusCode ?? meta.status ?? meta.statuscode ?? null;
+  const method = meta.method ?? meta.requestMethod ?? null;
+  const route = meta.route ?? meta.path ?? meta.url ?? null;
+  const host = meta.host ?? log.service ?? null;
+  const requestId = meta.requestId ?? meta.request_id ?? null;
+  const traceId = meta.traceId ?? meta.trace_id ?? null;
+  const deployId = meta.deploymentId ?? meta.deployId ?? meta.deployment_id ?? null;
+  const respTime = meta.responseTime ?? meta.duration ?? meta.latency ?? null;
+  const stackTrace = meta.stack ?? meta.stackTrace ?? log.stack ?? null;
 
-  /* Inline field component — renders nothing if value is empty/null */
   const Field = ({ label, value }) => {
     if (value == null || value === "") return null;
     return (
@@ -146,12 +194,10 @@ function LogDetailPanel({ log }) {
 
   return (
     <div className="lt-detail">
-
-      {/* ── Top strip: badge + ISO timestamp + copy button ── */}
       <div className="ld-header-row">
         <span className={`ld-badge ${levelClass}`}>{String(log.level || "").toUpperCase()}</span>
         <span className="ld-timestamp">
-          {log.timestamp ? new Date(log.timestamp).toISOString() : "—"}
+          {log.timestamp ? new Date(log.timestamp).toISOString() : "-"}
         </span>
         <span className="ld-spacer" />
         <button className="ld-copy-btn" onClick={copyJson} title="Copy raw JSON">
@@ -171,27 +217,23 @@ function LogDetailPanel({ log }) {
 
       <div className="ld-divider" />
 
-      {/* ── Metadata grid ── */}
       <div className="ld-grid">
-        <Field label="Service / Host"  value={host} />
-        <Field label="Route"           value={route} />
-        <Field label="Method"          value={method} />
-        <Field label="Status Code"     value={statusCode} />
-        <Field label="Response Time"   value={respTime != null ? `${respTime} ms` : null} />
-        <Field label="Request ID"      value={requestId} />
-        <Field label="Trace ID"        value={traceId} />
-        <Field label="Deployment ID"   value={deployId} />
+        <Field label="Service / Host" value={host} />
+        <Field label="Route" value={route} />
+        <Field label="Method" value={method} />
+        <Field label="Status Code" value={statusCode} />
+        <Field label="Response Time" value={respTime != null ? `${respTime} ms` : null} />
+        <Field label="Request ID" value={requestId} />
+        <Field label="Trace ID" value={traceId} />
+        <Field label="Deployment ID" value={deployId} />
       </div>
 
-      {/* ── Message ── */}
       <div className="ld-section-label">Message</div>
       <pre className="ld-msg-pre">{log.message}</pre>
 
-      {/* ── Raw JSON ── */}
       <div className="ld-section-label">Raw JSON</div>
       <pre className="ld-json-pre">{rawJson}</pre>
 
-      {/* ── Stack trace (only if present) ── */}
       {stackTrace && (
         <>
           <div className="ld-section-label ld-section-label--error">Stack Trace</div>

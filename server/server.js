@@ -128,7 +128,7 @@ if (type) {
     const from = (parseInt(page) - 1) * parseInt(limit);
 
     const result = await client.search({
-      index: "logstash-*",
+      index: process.env.ELASTICSEARCH_INDEX,
       from,
       size: parseInt(limit),
       sort: [{ "@timestamp": { order: "desc" } }],
