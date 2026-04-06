@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
-const { getGroupedIncidents } = require("./rca.controller");
+const { getGroupedIncidents ,analyzeIncident} = require("./rca.controller");
 
 router.get("/incidents", getGroupedIncidents);
-
+router.get("/analyze", analyzeIncident);
 module.exports = router;

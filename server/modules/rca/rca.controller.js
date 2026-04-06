@@ -1,4 +1,6 @@
 const client = require("../../config/elasticsearch");
+const { generateRCA } = require("./rca.ai.service");
+const { buildIncidentContext } = require("./rca.service");
 
 const shouldRetryWithPlainFingerprint = (error) => {
   const message = [
@@ -152,4 +154,41 @@ if (level) {
   }
 };
 
-module.exports = { getGroupedIncidents };
+const analyzeIncident = async (req, res) => {
+  try {
+    const { fingerprint, from, to } = req.query;
+
+    if (!fingerprint) {
+      return res.status(400).json({
+        success: false,
+        message: "fingerprint is required",
+      });
+    }
+
+    const context = await buildIncidentContext({
+      fingerprint,
+      from: from || "now-24h",
+      to: to || "now",
+    });
+
+    const aiRca = await generateRCA(context);
+
+    return res.json({
+      success: true,
+      context,
+      aiRca,
+    });
+  } catch (error) {
+    console.error("Error analyzing incident:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to analyze incident",
+      error: error.message,
+    });
+  }
+};
+
+module.exports = {
+  getGroupedIncidents,
+  analyzeIncident,
+};

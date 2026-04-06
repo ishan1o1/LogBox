@@ -1,7 +1,13 @@
+import { NavLink } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 import "../styles/Navbar.css";
 
-function Navbar({ user, logout }) {
+const NAV_ITEMS = [
+  { to: "/dashboard", label: "Logs" },
+  { to: "/rca", label: "RCA" },
+];
+
+function Navbar({ user, logout, title = "Logs" }) {
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -13,7 +19,20 @@ function Navbar({ user, logout }) {
         </span>
       </div>
 
-      <span className="topbar-title">Logs</span>
+      <div className="topbar-title">
+        <div className="topbar-nav">
+          {NAV_ITEMS.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) => `topbar-nav-link ${isActive ? "active" : ""}`}
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </div>
+        <span className="topbar-title-label">{title}</span>
+      </div>
 
       <div className="topbar-right">
         <button
