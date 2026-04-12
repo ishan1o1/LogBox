@@ -3,22 +3,23 @@
 
 .rca-page-shell {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(249, 115, 22, 0.08), transparent 28%),
-    radial-gradient(circle at top right, rgba(251, 113, 133, 0.08), transparent 24%),
-    var(--bg-base);
+  width: 100%; /* ✅ ensure full width */
+  background: var(--bg-base);
 }
 
 .rca-page {
   height: calc(100vh - var(--topbar-h));
   overflow-y: auto;
-  padding: 28px;
+
+  /* ✅ better full-width padding (responsive like SaaS apps) */
+  padding: 28px clamp(16px, 4vw, 48px);
 }
 
+/* ✅ FIXED: removed max-width + center alignment */
 .rca-hero,
 .rca-results {
-  max-width: 1240px;
-  margin: 0 auto 24px;
+  width: 100%;
+  margin-bottom: 24px;
 }
 
 .rca-hero {
@@ -29,10 +30,7 @@
   padding: 28px;
   border: 1px solid var(--border);
   border-radius: 28px;
-  background:
-    linear-gradient(135deg, rgba(249, 115, 22, 0.08), transparent 35%),
-    linear-gradient(225deg, rgba(251, 113, 133, 0.08), transparent 30%),
-    var(--bg-surface);
+  background: var(--bg-surface);
 }
 
 .rca-hero-eyebrow,
@@ -105,6 +103,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 18px;
+  width: 100%; /* ✅ ensure grid stretches */
 }
 
 .rca-empty-state,
