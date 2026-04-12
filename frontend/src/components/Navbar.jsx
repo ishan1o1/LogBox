@@ -31,7 +31,19 @@ function Navbar({ user, logout, title = "Logs" }) {
             </NavLink>
           ))}
         </div>
-        <span className="topbar-title-label">{title}</span>
+        <div className="topbar-title">
+  <div className="topbar-nav">
+    {NAV_ITEMS.map((item) => (
+      <NavLink
+        key={item.to}
+        to={item.to}
+        className={({ isActive }) => `topbar-nav-link ${isActive ? "active" : ""}`}
+      >
+        {item.label}
+      </NavLink>
+    ))}
+  </div>
+</div>
       </div>
 
       <div className="topbar-right">
