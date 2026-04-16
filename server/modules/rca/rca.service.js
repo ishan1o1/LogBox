@@ -10,18 +10,37 @@ const buildExactFilter = (field, value) => ({
   },
 });
 
-const buildIncidentContext = async ({ fingerprint, from, to }) => {
-  const filters = [
-    buildExactFilter("fingerprint", fingerprint),
-    {
-      range: {
-        "@timestamp": {
-          gte: from,
-          lte: to,
-        },
+const buildSyntheticFilter = (value) => ({
+  bool: {
+    should: [
+      { match_phrase: { message: value } },
+      { match_phrase: { error: value } },
+      { match_phrase: { event: value } },
+      { match_phrase: { route: value } },
+      { match_phrase: { module: value } },
+      { match_phrase: { service: value } },
+    ],
+    minimum_should_match: 1,
+  },
+});
+
+const buildIncidentContext = async ({ fingerprint, syntheticFilter, from, to }) => {
+  const filters = [];
+
+  if (syntheticFilter) {
+    filters.push(buildSyntheticFilter(syntheticFilter));
+  } else {
+    filters.push(buildExactFilter("fingerprint", fingerprint));
+  }
+
+  filters.push({
+    range: {
+      "@timestamp": {
+        gte: from,
+        lte: to,
       },
     },
-  ];
+  });
 
   const result = await client.search({
     index: "demo-logs-*",
@@ -79,7 +98,11 @@ const buildIncidentContext = async ({ fingerprint, from, to }) => {
   const hits = result.hits.hits.map((hit) => hit._source);
 
   if (!hits.length) {
-    throw new Error("No logs found for this fingerprint");
+    throw new Error(
+      syntheticFilter
+        ? `No logs found for this grouped incident filter: ${syntheticFilter}`
+        : "No logs found for this fingerprint"
+    );
   }
 
   const firstLog = hits[0];
@@ -125,6 +148,7 @@ const buildIncidentContext = async ({ fingerprint, from, to }) => {
 
   return {
     fingerprint,
+    syntheticFilter: syntheticFilter || null,
     totalOccurrences: hits.length,
     firstSeen: firstLog["@timestamp"],
     lastSeen: lastLog["@timestamp"],

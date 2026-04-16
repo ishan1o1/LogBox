@@ -118,27 +118,84 @@ if (level) {
       });
     }
 
-    const incidents = result.aggregations.grouped_errors.buckets.map((bucket) => {
+    let parsedIncidents = result.aggregations.grouped_errors.buckets.map((bucket) => {
       const log = bucket.latest_log.hits.hits[0]?._source || {};
       const levelValue = String(log.level || level || "error").toLowerCase();
       const severity =
-        levelValue === "fatal" || levelValue === "critical" ? "critical" :
-        levelValue === "warn" || levelValue === "warning" ? "medium" :
-        "high";
+        ["fatal", "critical"].includes(levelValue) ? "critical" :
+        ["error", "exception"].includes(levelValue) ? "high" :
+        ["warn", "warning"].includes(levelValue) ? "medium" :
+        "low";
+
+      let title = log.message || "Unknown error";
+      let fingerprint = bucket.key;
+      let syntheticFilter = null;
+
+      if (/login/i.test(title) || /credential/i.test(title)) {
+        fingerprint = "auth_login_group";
+        title = "Authentication & Login Events";
+        syntheticFilter = "login";
+      } else if (/http request/i.test(title)) {
+        fingerprint = "http_request_group";
+        title = "HTTP Request";
+        syntheticFilter = "HTTP Request";
+      } else if (/health check/i.test(title)) {
+        fingerprint = "health_check_group";
+        title = "Health Check Events";
+        syntheticFilter = "health check";
+      } else if (/json|syntax|expected/i.test(title)) {
+        fingerprint = "json_parse_group";
+        title = "JSON Parsing Errors";
+        syntheticFilter = "JSON";
+      } else if (/required|allowed|validation/i.test(title)) {
+        fingerprint = "validation_error_group";
+        title = "Validation Errors";
+        syntheticFilter = "required";
+      } else if (/redis/i.test(title)) {
+        fingerprint = "redis_error_group";
+        title = "Redis & DB Events";
+        syntheticFilter = "redis";
+      }
 
       return {
-        fingerprint: bucket.key,
-        title: log.message || "Unknown error",
+        fingerprint,
+        title,
         count: bucket.doc_count,
         route: log.route || null,
         method: log.method || null,
         module: log.module || null,
         statusCode: log.statusCode || null,
         severity,
-        firstSeen: bucket.first_seen.value_as_string,
-        lastSeen: bucket.last_seen.value_as_string,
+        firstSeen: new Date(bucket.first_seen.value_as_string),
+        lastSeen: new Date(bucket.last_seen.value_as_string),
+        syntheticFilter,
       };
     });
+
+    const mergedIncidentsMap = new Map();
+    for (const inc of parsedIncidents) {
+      if (mergedIncidentsMap.has(inc.fingerprint)) {
+        const existing = mergedIncidentsMap.get(inc.fingerprint);
+        existing.count += inc.count;
+        if (inc.firstSeen < existing.firstSeen) existing.firstSeen = inc.firstSeen;
+        if (inc.lastSeen > existing.lastSeen) existing.lastSeen = inc.lastSeen;
+        if (existing.route !== inc.route) existing.route = "mixed";
+        if (existing.method !== inc.method) existing.method = "mixed";
+        const sevOrder = { critical: 4, high: 3, medium: 2, low: 1 };
+        if (sevOrder[inc.severity] > sevOrder[existing.severity]) {
+          existing.severity = inc.severity;
+        }
+      } else {
+        mergedIncidentsMap.set(inc.fingerprint, { ...inc });
+      }
+    }
+
+    const incidents = Array.from(mergedIncidentsMap.values()).map(inc => ({
+      ...inc,
+      firstSeen: inc.firstSeen.toISOString(),
+      lastSeen: inc.lastSeen.toISOString(),
+    }));
+    incidents.sort((a, b) => b.count - a.count);
 
     res.json({
       success: true,
@@ -156,7 +213,7 @@ if (level) {
 
 const analyzeIncident = async (req, res) => {
   try {
-    const { fingerprint, from, to } = req.query;
+    const { fingerprint, syntheticFilter, from, to } = req.query;
 
     if (!fingerprint) {
       return res.status(400).json({
@@ -167,6 +224,7 @@ const analyzeIncident = async (req, res) => {
 
     const context = await buildIncidentContext({
       fingerprint,
+      syntheticFilter,
       from: from || "now-24h",
       to: to || "now",
     });
@@ -180,7 +238,9 @@ const analyzeIncident = async (req, res) => {
     });
   } catch (error) {
     console.error("Error analyzing incident:", error);
-    return res.status(500).json({
+    const statusCode = error.message?.includes("No logs found") ? 404 : 500;
+
+    return res.status(statusCode).json({
       success: false,
       message: "Failed to analyze incident",
       error: error.message,

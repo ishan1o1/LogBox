@@ -1,4 +1,5 @@
 const client = require("../config/elasticsearch")
+const WRITE_LOGS_INDEX = process.env.ELASTICSEARCH_WRITE_INDEX || "logs";
 
 let logBuffer = [];
 const BATCH_SIZE = 50;
@@ -15,7 +16,7 @@ async function flushLogs() {
     const body = logsToInsert.flatMap((log) => {
       const meta = (log.meta && typeof log.meta === "object") ? log.meta : {};
       return [
-        { index: { _index: "logs", _id: log.traceId || undefined } },
+        { index: { _index: WRITE_LOGS_INDEX, _id: log.traceId || undefined } },
         {
           timestamp: log.timestamp || new Date(),
 

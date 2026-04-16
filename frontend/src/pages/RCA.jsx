@@ -75,6 +75,7 @@ function RCA() {
     try {
       const payload = await analyzeIncident({
         fingerprint: incident.fingerprint,
+        syntheticFilter: incident.syntheticFilter,
         ...timeWindow,
       });
 

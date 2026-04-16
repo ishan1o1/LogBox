@@ -16,7 +16,7 @@ function fmtDateTime(ts) {
   return new Date(ts).toLocaleString();
 }
 
-function LogTable({ logs, hasMore, loading, onLoadMore, viewMode = "raw" }) {
+function LogTable({ logs, hasMore, loading, onLoadMore, viewMode = "raw", onIncidentClick }) {
   const [expandedRow, setExpandedRow] = useState(null);
   const tableRef = useRef(null);
   const isGroupedView = viewMode === "grouped";
@@ -79,7 +79,7 @@ function LogTable({ logs, hasMore, loading, onLoadMore, viewMode = "raw" }) {
 
       <div className="lt-rows">
         {isGroupedView ? (
-          <IncidentTable incidents={logs} />
+          <IncidentTable incidents={logs} onIncidentClick={onIncidentClick} />
         ) : (
           logs.map((log, idx) => (
             <div key={log._id || idx} className="lt-row-wrap">
@@ -114,7 +114,7 @@ function LogTable({ logs, hasMore, loading, onLoadMore, viewMode = "raw" }) {
   );
 }
 
-function IncidentTable({ incidents }) {
+function IncidentTable({ incidents, onIncidentClick }) {
   return (
     <div className="lt-incident-table-wrap">
       <table className="lt-incident-table">
@@ -131,7 +131,11 @@ function IncidentTable({ incidents }) {
         </thead>
         <tbody>
           {incidents.map((incident) => (
-            <tr key={incident.fingerprint}>
+            <tr
+              key={incident.fingerprint}
+              onClick={() => onIncidentClick && onIncidentClick(incident)}
+              style={{ cursor: onIncidentClick ? "pointer" : "default" }}
+            >
               <td>{incident.title}</td>
               <td>{incident.count}</td>
               <td>{incident.route || "-"}</td>

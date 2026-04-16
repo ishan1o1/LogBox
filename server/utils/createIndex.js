@@ -1,12 +1,14 @@
 const client = require("../config/elasticsearch");
 
+const WRITE_LOGS_INDEX = process.env.ELASTICSEARCH_WRITE_INDEX || "logs";
+
 const createLogsIndex = async () => {
   try {
-    const exists = await client.indices.exists({ index: "logs" });
+    const exists = await client.indices.exists({ index: WRITE_LOGS_INDEX });
 
     if (!exists) {
       await client.indices.create({
-        index: "logs",
+        index: WRITE_LOGS_INDEX,
         mappings: {
           properties: {
             timestamp: { type: "date" },
@@ -23,17 +25,17 @@ const createLogsIndex = async () => {
             requestId: { type: "keyword" },
             deploymentId: { type: "keyword" },
             responseTime: { type: "integer" },
-            environment: { type: "keyword" }
-          }
+            environment: { type: "keyword" },
+          },
         },
       });
 
-      console.log("✅ Elasticsearch 'logs' index created");
+      console.log(`Elasticsearch '${WRITE_LOGS_INDEX}' index created`);
     } else {
-      console.log("ℹ️ Elasticsearch 'logs' index already exists");
+      console.log(`Elasticsearch '${WRITE_LOGS_INDEX}' index already exists`);
     }
   } catch (error) {
-    console.error("❌ Error creating Elasticsearch index:", error);
+    console.error("Error creating Elasticsearch index:", error);
   }
 };
 

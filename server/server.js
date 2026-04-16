@@ -2,58 +2,288 @@ require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-const http = require("http")
+const http = require("http");
 const { Server } = require("socket.io");
-const {addLog} = require("./services/logBuffer");
-const Log = require("./models/log")
+const { addLog } = require("./services/logBuffer");
 const createLogsIndex = require("./utils/createIndex");
-const app = express();
-const rcaRoutes = require("./modules/rca/rca.routes")
-const server = http.createServer(app);
+const rcaRoutes = require("./modules/rca/rca.routes");
+const client = require("./config/elasticsearch");
 
+const app = express();
+const server = http.createServer(app);
+const WRITE_LOGS_INDEX = process.env.ELASTICSEARCH_WRITE_INDEX || "logs";
+const READ_LOGS_INDICES = Array.from(
+  new Set([
+    process.env.ELASTICSEARCH_INDEX,
+    process.env.ELASTICSEARCH_WRITE_INDEX,
+    "logs",
+  ].filter(Boolean))
+).join(",");
 
 const io = new Server(server, {
-  cors: { origin: "*" }
+  cors: { origin: "*" },
 });
-app.set("io",io);
 
+app.set("io", io);
 app.use(cors());
 app.use(express.json());
-
-app.use("/rca",rcaRoutes);
-const client = require("./config/elasticsearch");
+app.use("/rca", rcaRoutes);
 
 (async () => {
   try {
     const response = await client.info();
-    console.log("✅ Connected to Elasticsearch");
+    console.log("Connected to Elasticsearch");
     console.log(response);
   } catch (err) {
-    console.error("❌ Elasticsearch connection failed:", err.message);
+    console.error("Elasticsearch connection failed:", err.message);
   }
 })();
+
 createLogsIndex();
 
-// const MONGO_URI = `mongodb://${process.env.MONGO_USERNAME}:${process.env.MONGO_PASSWORD}@${process.env.MONGO_HOST}/?${process.env.MONGO_OPTIONS}`;
-
-const MONGO_URI = 'mongodb://localhost:27017/logs'
+const MONGO_URI = "mongodb://localhost:27017/logs";
 
 mongoose.connect(MONGO_URI)
-  .then(() => console.log("✅ MongoDB connected"))
-  .catch(err => console.error("❌ MongoDB connection error:", err));
-;
+  .then(() => console.log("MongoDB connected"))
+  .catch((err) => console.error("MongoDB connection error:", err));
 
+function parsePositiveInt(value, fallback, max = 10000) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.min(parsed, max);
+}
 
+function buildTimeRange(start, end) {
+  const range = {};
+  if (start) {
+    range.gte = start;
+  }
+  if (end) {
+    range.lte = end;
+  }
+  return Object.keys(range).length ? range : null;
+}
+
+function roundBucket(timestampMs, bucketMs) {
+  return Math.floor(timestampMs / bucketMs) * bucketMs;
+}
+
+function chooseBucketMs(start, end) {
+  const from = start ? new Date(start).getTime() : Date.now() - 30 * 60 * 1000;
+  const to = end ? new Date(end).getTime() : Date.now();
+  const duration = Math.max(to - from, 60 * 1000);
+
+  if (duration <= 60 * 60 * 1000) {
+    return 30 * 1000;
+  }
+  if (duration <= 6 * 60 * 60 * 1000) {
+    return 2 * 60 * 1000;
+  }
+  if (duration <= 24 * 60 * 60 * 1000) {
+    return 5 * 60 * 1000;
+  }
+  if (duration <= 3 * 24 * 60 * 60 * 1000) {
+    return 15 * 60 * 1000;
+  }
+  return 60 * 60 * 1000;
+}
+
+function formatBucketLabel(timestampMs, bucketMs) {
+  const options = bucketMs >= 60 * 60 * 1000
+    ? { month: "short", day: "numeric", hour: "2-digit" }
+    : { hour: "2-digit", minute: "2-digit" };
+
+  return new Date(timestampMs).toLocaleTimeString([], options);
+}
+
+function normalizeLog(hit) {
+  const source = hit._source || {};
+  return {
+    id: hit._id,
+    timestamp: source.timestamp || source["@timestamp"] || null,
+    level: source.level || "INFO",
+    service: source.service || "unknown",
+    message: source.message || "",
+    route: source.route || source.endpoint || source.service || "unknown",
+    endpoint: source.endpoint || source.route || source.service || "unknown",
+    method: source.method || "GET",
+    statusCode: Number(source.statusCode || 0),
+    responseTime: Number(source.responseTime || 0),
+    raw: source,
+  };
+}
+
+function normalizeIncomingLog(log) {
+  const meta = (log.meta && typeof log.meta === "object") ? log.meta : {};
+  const timestamp = log.timestamp || new Date().toISOString();
+
+  return {
+    ...log,
+    timestamp,
+    level: String(log.level || "INFO").toUpperCase(),
+    message: log.message || "",
+    service: log.service || "general",
+    route: meta.route ?? log.route ?? null,
+    method: meta.method ?? log.method ?? null,
+    endpoint: meta.endpoint ?? log.endpoint ?? null,
+    statusCode: meta.statusCode ?? log.statusCode ?? 200,
+    responseTime: meta.responseTime ?? log.responseTime ?? null,
+    traceId: meta.traceId ?? log.traceId ?? null,
+    requestId: meta.requestId ?? log.requestId ?? null,
+    deploymentId: meta.deploymentId ?? log.deploymentId ?? null,
+    host: meta.host ?? log.host ?? null,
+    meta,
+  };
+}
+
+function buildAnalyticsPayload(logs, start, end) {
+  const safeLogs = logs.filter((log) => log.timestamp);
+  const sortedLogs = [...safeLogs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const totalRequests = sortedLogs.length;
+  const totalErrors = sortedLogs.filter((log) => log.level === "ERROR" || log.statusCode >= 500).length;
+  const overallErrorPercentage = totalRequests ? (totalErrors / totalRequests) * 100 : 0;
+
+  const routeCounts = new Map();
+  sortedLogs.forEach((log) => {
+    const key = log.route;
+    routeCounts.set(key, (routeCounts.get(key) || 0) + 1);
+  });
+
+  const routeKeys = [...routeCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([key]) => key);
+
+  const bucketMs = chooseBucketMs(start, end);
+  const requestBuckets = new Map();
+  const routeSparkline = new Map();
+  const routeTotals = new Map();
+  const routeErrors = new Map();
+
+  sortedLogs.forEach((log) => {
+    if (!routeKeys.includes(log.route)) {
+      return;
+    }
+
+    const ts = new Date(log.timestamp).getTime();
+    const bucket = roundBucket(ts, bucketMs);
+    const requestEntry = requestBuckets.get(bucket) || { bucket, label: formatBucketLabel(bucket, bucketMs) };
+    requestEntry[log.route] = (requestEntry[log.route] || 0) + 1;
+    requestBuckets.set(bucket, requestEntry);
+
+    const sparklineRouteMap = routeSparkline.get(log.route) || new Map();
+    const sparklineBucket = sparklineRouteMap.get(bucket) || { bucket, total: 0, errors: 0 };
+    sparklineBucket.total += 1;
+    if (log.level === "ERROR" || log.statusCode >= 500) {
+      sparklineBucket.errors += 1;
+    }
+    sparklineRouteMap.set(bucket, sparklineBucket);
+    routeSparkline.set(log.route, sparklineRouteMap);
+
+    routeTotals.set(log.route, (routeTotals.get(log.route) || 0) + 1);
+    if (log.level === "ERROR" || log.statusCode >= 500) {
+      routeErrors.set(log.route, (routeErrors.get(log.route) || 0) + 1);
+    }
+  });
+
+  const requestRateSeries = [...requestBuckets.values()].sort((a, b) => a.bucket - b.bucket).map((entry) => {
+    const row = { label: entry.label };
+    routeKeys.forEach((key) => {
+      row[key] = entry[key] || 0;
+    });
+    return row;
+  });
+
+  const latestTimestamp = sortedLogs.length
+    ? new Date(sortedLogs[sortedLogs.length - 1].timestamp).getTime()
+    : Date.now();
+  const recentLatencyCutoff = latestTimestamp - 10 * 60 * 1000;
+  const latencyBuckets = new Map();
+
+  sortedLogs.forEach((log) => {
+    if (!routeKeys.includes(log.route) || !log.responseTime) {
+      return;
+    }
+
+    const ts = new Date(log.timestamp).getTime();
+    if (ts < recentLatencyCutoff) {
+      return;
+    }
+
+    const bucket = roundBucket(ts, 30 * 1000);
+    const bucketEntry = latencyBuckets.get(bucket) || { bucket, label: formatBucketLabel(bucket, 30 * 1000) };
+    const routeMetric = bucketEntry[log.route] || { total: 0, count: 0 };
+    routeMetric.total += log.responseTime;
+    routeMetric.count += 1;
+    bucketEntry[log.route] = routeMetric;
+    latencyBuckets.set(bucket, bucketEntry);
+  });
+
+  const latencySeries = [...latencyBuckets.values()].sort((a, b) => a.bucket - b.bucket).map((entry) => {
+    const row = { label: entry.label };
+    routeKeys.forEach((key) => {
+      const metric = entry[key];
+      row[key] = metric ? Number((metric.total / metric.count).toFixed(2)) : 0;
+    });
+    return row;
+  });
+
+  const lastMinuteCutoff = latestTimestamp - 60 * 1000;
+  const topLatencies = sortedLogs
+    .filter((log) => new Date(log.timestamp).getTime() >= lastMinuteCutoff && log.responseTime > 0)
+    .sort((a, b) => b.responseTime - a.responseTime)
+    .slice(0, 10)
+    .map((log) => ({
+      method: log.method,
+      endpoint: log.route,
+      latency: log.responseTime,
+    }));
+
+  const routeStats = routeKeys.map((route) => {
+    const total = routeTotals.get(route) || 0;
+    const errors = routeErrors.get(route) || 0;
+    const sparkline = [...(routeSparkline.get(route)?.values() || [])]
+      .sort((a, b) => a.bucket - b.bucket)
+      .map((entry) => ({
+        label: formatBucketLabel(entry.bucket, bucketMs),
+        value: entry.total ? Number(((entry.errors / entry.total) * 100).toFixed(2)) : 0,
+      }));
+
+    return {
+      route,
+      total,
+      errorCount: errors,
+      errorPercentage: total ? Number(((errors / total) * 100).toFixed(2)) : 0,
+      sparkline,
+    };
+  });
+
+  return {
+    totalRequests,
+    totalErrors,
+    overallErrorPercentage: Number(overallErrorPercentage.toFixed(2)),
+    routeKeys,
+    routeStats,
+    requestRateSeries,
+    latencySeries,
+    topLatencies,
+    rangeLabel: start && end
+      ? `${new Date(start).toLocaleString()} - ${new Date(end).toLocaleString()}`
+      : "Current range",
+  };
+}
 
 app.post("/log", async (req, res) => {
-  console.log("HIT:", req.body);
   try {
     const incoming = req.body;
     const logs = Array.isArray(incoming) ? incoming : [incoming];
 
     logs.forEach((log) => {
-      addLog(log);
-      req.app.get("io").emit("new-log", log);
+      const normalizedLog = normalizeIncomingLog(log);
+      addLog(normalizedLog);
+      req.app.get("io").emit("new-log", normalizedLog);
     });
 
     res.status(200).json({ status: "stored", count: logs.length });
@@ -62,7 +292,6 @@ app.post("/log", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 app.get("/logs", async (req, res) => {
   try {
@@ -76,31 +305,26 @@ app.get("/logs", async (req, res) => {
       search,
       ...rest
     } = req.query;
-    const { type } = req.query;
 
-if (type) {
-  must.push({ term: { type } });
-}
     const must = [];
 
     if (level) {
-  must.push({ term: { level: level.toLowerCase() } });
-}
-    if (service) must.push({ term: { service } });
+      must.push({ term: { level: String(level).toUpperCase() } });
+    }
+
+    if (service) {
+      must.push({ term: { service } });
+    }
 
     if (search) {
       must.push({
         bool: {
           should: [
-            {
-              match_phrase_prefix: {
-                message: { query: search },
-              },
-            },
+            { match_phrase_prefix: { message: { query: search } } },
             {
               wildcard: {
                 service: {
-                  value: `*${search.toLowerCase()}*`,
+                  value: `*${String(search).toLowerCase()}*`,
                   case_insensitive: true,
                 },
               },
@@ -108,7 +332,7 @@ if (type) {
             {
               wildcard: {
                 level: {
-                  value: `*${search.toLowerCase()}*`,
+                  value: `*${String(search).toLowerCase()}*`,
                   case_insensitive: true,
                 },
               },
@@ -119,23 +343,35 @@ if (type) {
       });
     }
 
-    if (start || end) {
-      const range = {};
-      if (start) range.gte = start;
-      if (end) range.lte = end;
-      must.push({ range: { "@timestamp": range } });
+    Object.entries(rest).forEach(([key, value]) => {
+      if (!key.startsWith("meta.") || !value) {
+        return;
+      }
+      const field = key.replace("meta.", "");
+      must.push({
+        wildcard: {
+          [field]: {
+            value: `*${value}*`,
+            case_insensitive: true,
+          },
+        },
+      });
+    });
+
+    const range = buildTimeRange(start, end);
+    if (range) {
+      must.push({ range: { timestamp: range } });
     }
 
-    const from = (parseInt(page) - 1) * parseInt(limit);
+    const from = (parsePositiveInt(page, 1, 100000) - 1) * parsePositiveInt(limit, 100, 1000);
+    const size = parsePositiveInt(limit, 100, 1000);
 
     const result = await client.search({
-      index: process.env.ELASTICSEARCH_INDEX,
+      index: READ_LOGS_INDICES,
       from,
-      size: parseInt(limit),
-      sort: [{ "@timestamp": { order: "desc" } }],
-      query: must.length > 0
-        ? { bool: { must } }
-        : { match_all: {} },
+      size,
+      sort: [{ timestamp: { order: "desc" } }],
+      query: must.length > 0 ? { bool: { must } } : { match_all: {} },
     });
 
     const logs = result.hits.hits.map((hit) => ({
@@ -145,10 +381,39 @@ if (type) {
 
     res.json(logs);
   } catch (err) {
-    console.error("❌ Error fetching logs:", err);
+    console.error("Error fetching logs:", err);
     res.status(500).json({ error: err.message });
   }
 });
+
+app.get("/logs/analytics", async (req, res) => {
+  try {
+    const end = req.query.end || new Date().toISOString();
+    const start = req.query.start || new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const size = parsePositiveInt(req.query.size, 5000, 10000);
+    const range = buildTimeRange(start, end);
+    const must = [];
+
+    if (range) {
+      must.push({ range: { timestamp: range } });
+    }
+
+    const result = await client.search({
+      index: READ_LOGS_INDICES,
+      size,
+      sort: [{ timestamp: { order: "asc" } }],
+      _source: ["timestamp", "level", "service", "route", "endpoint", "method", "statusCode", "responseTime", "message"],
+      query: must.length ? { bool: { must } } : { match_all: {} },
+    });
+
+    const logs = result.hits.hits.map(normalizeLog);
+    res.json(buildAnalyticsPayload(logs, start, end));
+  } catch (err) {
+    console.error("Error building analytics:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
 });
