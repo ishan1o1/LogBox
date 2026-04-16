@@ -15,6 +15,7 @@
   padding: 16px 18px 18px;
 }
 
+/* ✅ FIXED: removed max-width + center alignment */
 .rca-hero,
 .rca-results {
   max-width: 1440px;
@@ -114,6 +115,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 18px;
+  width: 100%; /* ✅ ensure grid stretches */
 }
 
 .rca-empty-state,
