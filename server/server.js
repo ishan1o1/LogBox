@@ -103,7 +103,7 @@ function normalizeLog(hit) {
   return {
     id: hit._id,
     timestamp: source.timestamp || source["@timestamp"] || null,
-    level: source.level || "INFO",
+    level: String(source.level || "INFO").toUpperCase(),
     service: source.service || "unknown",
     message: source.message || "",
     route: source.route || source.endpoint || source.service || "unknown",
@@ -121,6 +121,7 @@ function normalizeIncomingLog(log) {
 
   return {
     ...log,
+    _receivedAt: Date.now(),
     timestamp,
     level: String(log.level || "INFO").toUpperCase(),
     message: log.message || "",
@@ -135,6 +136,27 @@ function normalizeIncomingLog(log) {
     deploymentId: meta.deploymentId ?? log.deploymentId ?? null,
     host: meta.host ?? log.host ?? null,
     meta,
+  };
+}
+
+function buildWildcardShouldQuery(fields, value) {
+  const normalizedValue = String(value ?? "").trim();
+  if (!normalizedValue) {
+    return null;
+  }
+
+  return {
+    bool: {
+      should: fields.map((field) => ({
+        wildcard: {
+          [field]: {
+            value: `*${normalizedValue}*`,
+            case_insensitive: true,
+          },
+        },
+      })),
+      minimum_should_match: 1,
+    },
   };
 }
 
@@ -196,10 +218,6 @@ function buildAnalyticsPayload(logs, start, end) {
     return row;
   });
 
-  const latestTimestamp = sortedLogs.length
-    ? new Date(sortedLogs[sortedLogs.length - 1].timestamp).getTime()
-    : Date.now();
-  const recentLatencyCutoff = latestTimestamp - 10 * 60 * 1000;
   const latencyBuckets = new Map();
 
   sortedLogs.forEach((log) => {
@@ -208,12 +226,8 @@ function buildAnalyticsPayload(logs, start, end) {
     }
 
     const ts = new Date(log.timestamp).getTime();
-    if (ts < recentLatencyCutoff) {
-      return;
-    }
-
-    const bucket = roundBucket(ts, 30 * 1000);
-    const bucketEntry = latencyBuckets.get(bucket) || { bucket, label: formatBucketLabel(bucket, 30 * 1000) };
+    const bucket = roundBucket(ts, bucketMs);
+    const bucketEntry = latencyBuckets.get(bucket) || { bucket, label: formatBucketLabel(bucket, bucketMs) };
     const routeMetric = bucketEntry[log.route] || { total: 0, count: 0 };
     routeMetric.total += log.responseTime;
     routeMetric.count += 1;
@@ -230,9 +244,8 @@ function buildAnalyticsPayload(logs, start, end) {
     return row;
   });
 
-  const lastMinuteCutoff = latestTimestamp - 60 * 1000;
   const topLatencies = sortedLogs
-    .filter((log) => new Date(log.timestamp).getTime() >= lastMinuteCutoff && log.responseTime > 0)
+    .filter((log) => log.responseTime > 0)
     .sort((a, b) => b.responseTime - a.responseTime)
     .slice(0, 10)
     .map((log) => ({
@@ -283,19 +296,19 @@ app.post("/log", async (req, res) => {
     logs.forEach((log) => {
       const normalizedLog = normalizeIncomingLog(log);
       addLog(normalizedLog);
-      req.app.get("io").emit("new-log", normalizedLog);
+      const payload = { ...normalizedLog, _emittedAt: Date.now() };
+      req.app.get("io").emit("new-log", payload);
     });
-
     res.status(200).json({ status: "stored", count: logs.length });
   } catch (err) {
     console.error("Elasticsearch error:", err);
     res.status(500).json({ error: err.message });
   }
 });
-
 app.get("/logs", async (req, res) => {
   try {
     const {
+      levels,
       level,
       service,
       start,
@@ -308,8 +321,15 @@ app.get("/logs", async (req, res) => {
 
     const must = [];
 
-    if (level) {
-      must.push({ term: { level: String(level).toUpperCase() } });
+    if (levels) {
+      const levelsArray = String(levels).split(',').flatMap(l => {
+        const t = l.trim();
+        return [t.toUpperCase(), t.toLowerCase(), t.charAt(0).toUpperCase() + t.slice(1).toLowerCase()];
+      });
+      must.push({ terms: { level: levelsArray } });
+    } else if (level) {
+      const t = String(level).trim();
+      must.push({ terms: { level: [t.toUpperCase(), t.toLowerCase(), t.charAt(0).toUpperCase() + t.slice(1).toLowerCase()] } });
     }
 
     if (service) {
@@ -317,26 +337,30 @@ app.get("/logs", async (req, res) => {
     }
 
     if (search) {
+      const q = String(search).trim();
+      const qLower = q.toLowerCase();
+      const qUpper = q.toUpperCase();
+      
+      const fields = ["service", "level", "route", "endpoint", "method", "errorType", "fingerprint", "traceId", "requestId", "host"];
+      const metaFields = ["module", "environment", "source", "errorType", "fingerprint", "traceId", "requestId", "host"];
+      
+      const wildcards = [];
+      fields.forEach(field => {
+        wildcards.push({ wildcard: { [field]: `*${q}*` } });
+        if (qLower !== q) wildcards.push({ wildcard: { [field]: `*${qLower}*` } });
+        if (qUpper !== q) wildcards.push({ wildcard: { [field]: `*${qUpper}*` } });
+      });
+      metaFields.forEach(field => {
+        wildcards.push({ wildcard: { [`meta.${field}`]: `*${q}*` } });
+        if (qLower !== q) wildcards.push({ wildcard: { [`meta.${field}`]: `*${qLower}*` } });
+        if (qUpper !== q) wildcards.push({ wildcard: { [`meta.${field}`]: `*${qUpper}*` } });
+      });
+
       must.push({
         bool: {
           should: [
-            { match_phrase_prefix: { message: { query: search } } },
-            {
-              wildcard: {
-                service: {
-                  value: `*${String(search).toLowerCase()}*`,
-                  case_insensitive: true,
-                },
-              },
-            },
-            {
-              wildcard: {
-                level: {
-                  value: `*${String(search).toLowerCase()}*`,
-                  case_insensitive: true,
-                },
-              },
-            },
+            { match_phrase_prefix: { message: { query: q } } },
+            ...wildcards
           ],
           minimum_should_match: 1,
         },
@@ -348,14 +372,10 @@ app.get("/logs", async (req, res) => {
         return;
       }
       const field = key.replace("meta.", "");
-      must.push({
-        wildcard: {
-          [field]: {
-            value: `*${value}*`,
-            case_insensitive: true,
-          },
-        },
-      });
+      const query = buildWildcardShouldQuery([field, `meta.${field}`], value);
+      if (query) {
+        must.push(query);
+      }
     });
 
     const range = buildTimeRange(start, end);
@@ -417,6 +437,70 @@ app.get("/logs/analytics", async (req, res) => {
 io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
 });
+
+// ─── ES tail-poll: watch for new docs written directly by Filebeat ──────────
+// Filebeat → ES bypasses the /log endpoint, so we poll ES for new docs and
+// emit socket events so the frontend gets live updates + latency metrics.
+let lastSeenTimestamp = new Date().toISOString(); // only tail new docs from now
+
+async function pollESForNewLogs() {
+  const pollStart = Date.now();
+  try {
+    const result = await client.search({
+      index: READ_LOGS_INDICES,
+      size: 100,
+      sort: [{ "@timestamp": { order: "asc" } }, { timestamp: { order: "asc" } }],
+      query: {
+        bool: {
+          should: [
+            { range: { "@timestamp": { gt: lastSeenTimestamp } } },
+            { range: { timestamp: { gt: lastSeenTimestamp } } },
+          ],
+          minimum_should_match: 1,
+        },
+      },
+    });
+
+    const queryLatencyMs = Date.now() - pollStart;
+    const hits = result.hits?.hits || [];
+
+    if (hits.length > 0) {
+      console.log(
+        `[ES] 🔍 Poll: ${hits.length} new doc(s) | query=${queryLatencyMs}ms | since=${lastSeenTimestamp}`
+      );
+
+      hits.forEach((hit) => {
+        const source = hit._source || {};
+        const docTimestamp = source["@timestamp"] || source.timestamp;
+
+        // Advance the cursor to the latest doc seen
+        if (docTimestamp && docTimestamp > lastSeenTimestamp) {
+          lastSeenTimestamp = docTimestamp;
+        }
+
+        const emittedAt = Date.now();
+        const payload = {
+          id: hit._id,
+          ...source,
+          // normalise level capitalisation
+          level: String(source.level || "INFO").toUpperCase(),
+          _emittedAt: emittedAt,
+          _esQueryLatencyMs: queryLatencyMs,
+        };
+
+        io.emit("new-log", payload);
+      });
+    }
+  } catch (err) {
+    // ES not ready yet — stay quiet, retry next interval
+    if (err?.statusCode !== 404) {
+      console.error("[ES] ❌ Poll error:", err.message);
+    }
+  }
+}
+
+setInterval(pollESForNewLogs, 2000);
+// ─────────────────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {

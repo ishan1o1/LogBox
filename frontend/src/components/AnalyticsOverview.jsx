@@ -193,7 +193,8 @@ function AnalyticsOverview({
 
           <section className="analytics-panel analytics-table-panel analytics-panel-tight">
             <div className="analytics-panel-head center">
-              <h2>Top 10 Highest Endpoint Latencies Over Last Minute</h2>
+              <h2>Top 10 Highest Endpoint Latencies</h2>
+              <span>{data.rangeLabel}</span>
             </div>
             <table className="analytics-table">
               <thead>
@@ -218,7 +219,7 @@ function AnalyticsOverview({
           <section className="analytics-panel analytics-panel-chart analytics-panel-tight">
             <div className="analytics-panel-head center">
               <h2>All Endpoint Latencies in ms</h2>
-              <span>Last 10 minutes</span>
+              <span>{data.rangeLabel}</span>
             </div>
             <ResponsiveContainer width="100%" height={300}>
               <AreaChart data={data.latencySeries} margin={{ top: 16, right: 8, left: -12, bottom: 0 }}>

@@ -25,10 +25,18 @@ const DURATION_MS = {
   "7d": 7 * 24 * 60 * 60 * 1000,
   "14d": 14 * 24 * 60 * 60 * 1000,
   "30d": 30 * 24 * 60 * 60 * 1000,
-  "ALL": 10 * 365 * 24 * 60 * 60 * 1000,
+  ALL: 10 * 365 * 24 * 60 * 60 * 1000,
 };
 
 const LEVEL_ALIASES = { warning: "WARN", fatal: "ERROR", critical: "ERROR" };
+
+const LEVEL_FILTER_MAP = {
+  WARN: ["WARN", "WARNING"],
+  ERROR: ["ERROR"],
+  FATAL: ["FATAL", "CRITICAL"],
+  DEBUG: ["DEBUG"],
+  INFO: ["INFO"],
+};
 
 const CLIENT_FIELD_MAP = {
   status: { field: "statusCode", numeric: true },
@@ -75,7 +83,9 @@ const ANALYTICS_DURATION_OPTIONS = [
 ];
 
 function getWindowForDuration(value) {
-  const selected = INSIGHT_DURATION_OPTIONS.find((option) => option.value === value);
+  const selected = INSIGHT_DURATION_OPTIONS.find(
+    (option) => option.value === value,
+  );
   const durationMs = selected?.ms || 24 * 60 * 60 * 1000;
   const to = new Date();
   const from = new Date(to.getTime() - durationMs);
@@ -84,6 +94,29 @@ function getWindowForDuration(value) {
     from: from.toISOString(),
     to: to.toISOString(),
   };
+}
+
+function normalizeLevelForFilter(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase();
+  if (!normalized) {
+    return "";
+  }
+
+  if (normalized === "WARNING") {
+    return "WARN";
+  }
+
+  if (normalized === "CRITICAL") {
+    return "FATAL";
+  }
+
+  return normalized;
+}
+
+function expandLevelFilters(levels = []) {
+  return levels.flatMap((level) => LEVEL_FILTER_MAP[level] || [level]);
 }
 
 function InsightsPanel({
@@ -106,8 +139,21 @@ function InsightsPanel({
   return (
     <div className="section-scroll-page">
       {!sidebarOpen && (
-        <button className="page-sidebar-open-btn icon-btn" onClick={onOpenSidebar} title="Open Workspace">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <button
+          className="page-sidebar-open-btn icon-btn"
+          onClick={onOpenSidebar}
+          title="Open Workspace"
+        >
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <line x1="3" y1="12" x2="21" y2="12"></line>
             <line x1="3" y1="6" x2="21" y2="6"></line>
             <line x1="3" y1="18" x2="21" y2="18"></line>
@@ -120,15 +166,18 @@ function InsightsPanel({
           <span className="rca-hero-eyebrow">Insights</span>
           <h1>Grouped incidents with RCA</h1>
           <p>
-            Review recurring failures, then open one incident to generate an explanation with evidence,
-            blast radius, and next-step fixes.
+            Review recurring failures, then open one incident to generate an
+            explanation with evidence, blast radius, and next-step fixes.
           </p>
         </div>
 
         <div className="rca-controls">
           <label className="rca-duration-field">
             <span>Time Window</span>
-            <select value={duration} onChange={(event) => onDurationChange(event.target.value)}>
+            <select
+              value={duration}
+              onChange={(event) => onDurationChange(event.target.value)}
+            >
               {INSIGHT_DURATION_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -137,7 +186,11 @@ function InsightsPanel({
             </select>
           </label>
 
-          <button className="rca-refresh-btn" onClick={onRefresh} disabled={loadingIncidents}>
+          <button
+            className="rca-refresh-btn"
+            onClick={onRefresh}
+            disabled={loadingIncidents}
+          >
             {loadingIncidents ? "Refreshing..." : "Refresh Incidents"}
           </button>
         </div>
@@ -150,16 +203,21 @@ function InsightsPanel({
             <h2>{incidents.length} incidents ready for analysis</h2>
           </div>
           <p>
-            Range: {new Date(timeWindow.from).toLocaleString()} to {new Date(timeWindow.to).toLocaleString()}
+            Range: {new Date(timeWindow.from).toLocaleString()} to{" "}
+            {new Date(timeWindow.to).toLocaleString()}
           </p>
         </div>
 
-        {incidentsError && <div className="rca-inline-error">{incidentsError}</div>}
+        {incidentsError && (
+          <div className="rca-inline-error">{incidentsError}</div>
+        )}
 
         {!loadingIncidents && incidents.length === 0 && !incidentsError && (
           <div className="rca-empty-state">
             <h3>No grouped incidents found</h3>
-            <p>Try widening the time range or refresh after more logs arrive.</p>
+            <p>
+              Try widening the time range or refresh after more logs arrive.
+            </p>
           </div>
         )}
 
@@ -178,7 +236,10 @@ function InsightsPanel({
       <RCAModal
         incident={selectedIncident}
         analysis={selectedAnalysis}
-        loading={Boolean(selectedIncident) && analysisLoadingFor === selectedIncident.fingerprint}
+        loading={
+          Boolean(selectedIncident) &&
+          analysisLoadingFor === selectedIncident.fingerprint
+        }
         error={analysisError}
         onClose={onCloseAnalysis}
       />
@@ -198,8 +259,21 @@ function AnalyticsPanel({
   return (
     <div className="section-scroll-page analytics-page">
       {!sidebarOpen && (
-        <button className="page-sidebar-open-btn icon-btn" onClick={onOpenSidebar} title="Open Workspace">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <button
+          className="page-sidebar-open-btn icon-btn"
+          onClick={onOpenSidebar}
+          title="Open Workspace"
+        >
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <line x1="3" y1="12" x2="21" y2="12"></line>
             <line x1="3" y1="6" x2="21" y2="6"></line>
             <line x1="3" y1="18" x2="21" y2="18"></line>
@@ -280,7 +354,10 @@ function AdminDashboard({ initialSection = "logs" }) {
     return ms ? new Date(Date.now() - ms).toISOString() : null;
   }, [analyticsDuration]);
 
-  const insightsTimeWindow = useMemo(() => getWindowForDuration(insightsDuration), [insightsDuration]);
+  const insightsTimeWindow = useMemo(
+    () => getWindowForDuration(insightsDuration),
+    [insightsDuration],
+  );
 
   const parsedSearch = useMemo(() => {
     const result = { level: null, service: null, meta: {}, freeText: "" };
@@ -303,7 +380,9 @@ function AdminDashboard({ initialSection = "logs" }) {
 
         if (key === "level") {
           const raw = value.toUpperCase();
-          result.level = LEVEL_ALIASES[raw.toLowerCase()] ?? raw;
+          result.level = normalizeLevelForFilter(
+            LEVEL_ALIASES[raw.toLowerCase()] ?? raw,
+          );
         } else if (key === "service") {
           result.service = value;
         } else {
@@ -318,54 +397,66 @@ function AdminDashboard({ initialSection = "logs" }) {
     return result;
   }, [searchQuery]);
 
-  const fetchPage = useCallback(async (pageNum, reset = false) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ page: pageNum, limit: PAGE_SIZE });
-      if (logsStartTime) {
-        params.set("start", logsStartTime);
-      }
-
-      const levelParam = parsedSearch.level || (filters.levels?.length === 1 ? filters.levels[0] : null);
-      const serviceParam = parsedSearch.service || filters.service || null;
-
-      if (parsedSearch.freeText) {
-        params.set("search", parsedSearch.freeText);
-      }
-      if (levelParam) {
-        params.set("level", levelParam);
-      }
-      if (serviceParam) {
-        params.set("service", serviceParam);
-      }
-
-      for (const [key, value] of Object.entries(parsedSearch.meta)) {
-        if (value) {
-          params.set(`meta.${key}`, value);
+  const fetchPage = useCallback(
+    async (pageNum, reset = false) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({ page: pageNum, limit: PAGE_SIZE });
+        if (logsStartTime) {
+          params.set("start", logsStartTime);
         }
-      }
 
-      const response = await fetch(`${SOCKET_URL}/logs?${params.toString()}`);
-      const data = await response.json();
-      setLogs((prev) => (reset ? data : [...prev, ...data]));
-      setHasMore(Array.isArray(data) && data.length === PAGE_SIZE);
-    } catch (error) {
-      console.error("Fetch error:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [filters.levels, filters.service, logsStartTime, parsedSearch]);
+        const selectedLevels = parsedSearch.level
+          ? [parsedSearch.level]
+          : filters.levels;
+        const backendLevels =
+          expandLevelFilters(selectedLevels).filter(Boolean);
+        const serviceParam = parsedSearch.service || filters.service || null;
+
+        if (parsedSearch.freeText) {
+          params.set("search", parsedSearch.freeText);
+        }
+        if (backendLevels.length > 0) {
+          params.set("levels", backendLevels.join(","));
+        }
+        if (serviceParam) {
+          params.set("service", serviceParam);
+        }
+
+        for (const [key, value] of Object.entries(parsedSearch.meta)) {
+          if (value) {
+            const mapping = CLIENT_FIELD_MAP[key.toLowerCase()];
+            const backendField = mapping?.field ?? key;
+            params.set(`meta.${backendField}`, value);
+          }
+        }
+
+        const response = await fetch(`${SOCKET_URL}/logs?${params.toString()}`);
+        const data = await response.json();
+        setLogs((prev) => (reset ? data : [...prev, ...data]));
+        setHasMore(Array.isArray(data) && data.length === PAGE_SIZE);
+      } catch (error) {
+        console.error("Fetch error:", error);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [filters.levels, filters.service, logsStartTime, parsedSearch],
+  );
 
   const fetchIncidents = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      const levelParam = parsedSearch.level || (filters.levels?.length === 1 ? filters.levels[0] : null);
+      const selectedLevels = parsedSearch.level
+        ? [parsedSearch.level]
+        : filters.levels;
+      const backendLevels = expandLevelFilters(selectedLevels).filter(Boolean);
       const routeParam = parsedSearch.meta.route || filters.route || "";
       const moduleParam = parsedSearch.meta.module || "";
 
-      if (levelParam) {
-        params.set("level", levelParam.toLowerCase());
+      if (backendLevels.length > 0) {
+        params.set("levels", backendLevels.join(",").toLowerCase());
       }
       if (routeParam) {
         params.set("route", routeParam);
@@ -378,7 +469,9 @@ function AdminDashboard({ initialSection = "logs" }) {
       }
       params.set("to", new Date().toISOString());
 
-      const response = await fetch(`${SOCKET_URL}/rca/incidents?${params.toString()}`);
+      const response = await fetch(
+        `${SOCKET_URL}/rca/incidents?${params.toString()}`,
+      );
       const data = await response.json();
       setIncidents(data.incidents || []);
       setHasMore(false);
@@ -388,7 +481,14 @@ function AdminDashboard({ initialSection = "logs" }) {
     } finally {
       setLoading(false);
     }
-  }, [filters.levels, filters.route, logsStartTime, parsedSearch.level, parsedSearch.meta.module, parsedSearch.meta.route]);
+  }, [
+    filters.levels,
+    filters.route,
+    logsStartTime,
+    parsedSearch.level,
+    parsedSearch.meta.module,
+    parsedSearch.meta.route,
+  ]);
 
   useEffect(() => {
     setActiveSection(initialSection);
@@ -410,8 +510,19 @@ function AdminDashboard({ initialSection = "logs" }) {
 
     const socket = io(SOCKET_URL, { transports: ["websocket"] });
     socket.on("new-log", (log) => {
+      const receivedAt = Date.now();
+      const socketLatencyMs = log._emittedAt ? receivedAt - log._emittedAt : null;
+      const esLatencyMs = log._esQueryLatencyMs ?? null;
+      console.log(
+        `[Socket] 📡 new-log | socket=${socketLatencyMs != null ? socketLatencyMs + "ms" : "n/a"} | es_query=${esLatencyMs != null ? esLatencyMs + "ms" : "n/a"} | service=${log.service || "?"} level=${log.level || "?"} | msg="${String(log.message || "").slice(0, 60)}"`
+      );
+
       const logTimestamp = log.timestamp || log["@timestamp"];
-      if (logsStartTime && logTimestamp && new Date(logTimestamp) < new Date(logsStartTime)) {
+      if (
+        logsStartTime &&
+        logTimestamp &&
+        new Date(logTimestamp) < new Date(logsStartTime)
+      ) {
         return;
       }
       setLogs((prev) => [log, ...prev]);
@@ -442,33 +553,36 @@ function AdminDashboard({ initialSection = "logs" }) {
     loadInsights();
   }, [activeSection, loadInsights]);
 
-  const handleAnalyzeIncident = useCallback(async (incident) => {
-    setSelectedIncident(incident);
-    setAnalysisError("");
+  const handleAnalyzeIncident = useCallback(
+    async (incident) => {
+      setSelectedIncident(incident);
+      setAnalysisError("");
 
-    if (analysisByFingerprint[incident.fingerprint]) {
-      return;
-    }
+      if (analysisByFingerprint[incident.fingerprint]) {
+        return;
+      }
 
-    setAnalysisLoadingFor(incident.fingerprint);
+      setAnalysisLoadingFor(incident.fingerprint);
 
-    try {
-      const payload = await analyzeIncident({
-        fingerprint: incident.fingerprint,
-        syntheticFilter: incident.syntheticFilter,
-        ...insightsTimeWindow,
-      });
+      try {
+        const payload = await analyzeIncident({
+          fingerprint: incident.fingerprint,
+          syntheticFilter: incident.syntheticFilter,
+          ...insightsTimeWindow,
+        });
 
-      setAnalysisByFingerprint((prev) => ({
-        ...prev,
-        [incident.fingerprint]: payload,
-      }));
-    } catch (error) {
-      setAnalysisError(error.message || "Failed to analyze incident");
-    } finally {
-      setAnalysisLoadingFor("");
-    }
-  }, [analysisByFingerprint, insightsTimeWindow]);
+        setAnalysisByFingerprint((prev) => ({
+          ...prev,
+          [incident.fingerprint]: payload,
+        }));
+      } catch (error) {
+        setAnalysisError(error.message || "Failed to analyze incident");
+      } finally {
+        setAnalysisLoadingFor("");
+      }
+    },
+    [analysisByFingerprint, insightsTimeWindow],
+  );
 
   const handleLoadMore = useCallback(() => {
     if (viewMode === "grouped") {
@@ -493,14 +607,20 @@ function AdminDashboard({ initialSection = "logs" }) {
   const filteredLogs = useMemo(() => {
     let result = logs;
 
-    const activeLevels = parsedSearch.level ? [parsedSearch.level] : filters.levels;
+    const activeLevels = parsedSearch.level
+      ? [parsedSearch.level]
+      : filters.levels;
     if (activeLevels.length > 0) {
-      result = result.filter((log) => activeLevels.includes(log.level?.toUpperCase()));
+      result = result.filter((log) =>
+        activeLevels.includes(normalizeLevelForFilter(log.level)),
+      );
     }
 
     const activeService = parsedSearch.service || filters.service;
     if (activeService) {
-      result = result.filter((log) => log.service?.toLowerCase() === activeService.toLowerCase());
+      result = result.filter(
+        (log) => log.service?.toLowerCase() === activeService.toLowerCase(),
+      );
     }
 
     for (const [key, value] of Object.entries(parsedSearch.meta)) {
@@ -525,10 +645,23 @@ function AdminDashboard({ initialSection = "logs" }) {
 
     if (parsedSearch.freeText) {
       const query = parsedSearch.freeText.toLowerCase();
-      result = result.filter((log) => (
-        log.message?.toLowerCase().includes(query)
-        || log.service?.toLowerCase().includes(query)
-      ));
+      result = result.filter(
+        (log) =>
+          log.message?.toLowerCase().includes(query) ||
+          log.service?.toLowerCase().includes(query) ||
+          log.route?.toLowerCase().includes(query) ||
+          log.endpoint?.toLowerCase().includes(query) ||
+          log.method?.toLowerCase().includes(query) ||
+          log.level?.toLowerCase().includes(query) ||
+          log.errorType?.toLowerCase().includes(query) ||
+          log.fingerprint?.toLowerCase().includes(query) ||
+          log.traceId?.toLowerCase().includes(query) ||
+          log.requestId?.toLowerCase().includes(query) ||
+          log.host?.toLowerCase().includes(query) ||
+          Object.values(log.meta || {}).some((value) =>
+            String(value).toLowerCase().includes(query),
+          ),
+      );
     }
 
     return result;
@@ -548,10 +681,11 @@ function AdminDashboard({ initialSection = "logs" }) {
   };
 
   const logCounts = useMemo(() => {
-    const counts = { WARN: 0, ERROR: 0, DEBUG: 0 };
+    const counts = { WARN: 0, ERROR: 0, FATAL: 0 };
     logs.forEach((log) => {
-      if (counts[log.level] !== undefined) {
-        counts[log.level] += 1;
+      const normalizedLevel = normalizeLevelForFilter(log.level);
+      if (counts[normalizedLevel] !== undefined) {
+        counts[normalizedLevel] += 1;
       }
     });
     return counts;
@@ -598,7 +732,11 @@ function AdminDashboard({ initialSection = "logs" }) {
                 isLive={isLive}
                 onToggleLive={() => setIsLive((prev) => !prev)}
                 viewMode={viewMode}
-                onToggleGrouped={() => setViewMode((prev) => (prev === "grouped" ? "raw" : "grouped"))}
+                onToggleGrouped={() =>
+                  setViewMode((prev) =>
+                    prev === "grouped" ? "raw" : "grouped",
+                  )
+                }
                 onRefresh={handleRefresh}
                 onExport={handleExport}
                 loading={loading}

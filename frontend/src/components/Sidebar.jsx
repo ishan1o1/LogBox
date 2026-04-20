@@ -4,7 +4,7 @@ import "../styles/Sidebar.css";
 const LEVEL_OPTIONS = [
   { key: "WARN", label: "Warning" },
   { key: "ERROR", label: "Error" },
-  { key: "DEBUG", label: "Fatal" },
+  { key: "FATAL", label: "Fatal" },
 ];
 
 const SECTION_OPTIONS = [
@@ -98,17 +98,6 @@ function Sidebar({
   const [expandedSections, setExpandedSections] = useState({
     timeline: true,
     level: true,
-    resource: false,
-    environment: false,
-    route: false,
-    requestPath: false,
-    statusCode: false,
-    requestType: false,
-    host: false,
-    requestMethod: false,
-    cache: false,
-    branch: false,
-    deploymentId: false,
   });
 
   const toggleSection = (key) => {
@@ -137,15 +126,6 @@ function Sidebar({
       _userName: filters._userName,
     });
   };
-
-  const Section = ({ id, label }) => (
-    <button className="sb-row" onClick={() => toggleSection(id)}>
-      <svg className={`sb-chev ${expandedSections[id] ? "open" : ""}`} width="10" height="10" viewBox="0 0 10 10" fill="none">
-        <path d="M3 2l4 3.5L3 9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-      <span>{label}</span>
-    </button>
-  );
 
   return (
     <aside className={`sb ${isOpen ? "open" : "closed"}`}>
@@ -220,18 +200,6 @@ function Sidebar({
                 </div>
               )}
             </div>
-
-            <Section id="resource" label="Resource" />
-            <Section id="environment" label="Environment" />
-            <Section id="route" label="Route" />
-            <Section id="requestPath" label="Request Path" />
-            <Section id="statusCode" label="Status Code" />
-            <Section id="requestType" label="Request Type" />
-            <Section id="host" label="Host" />
-            <Section id="requestMethod" label="Request Method" />
-            <Section id="cache" label="Cache" />
-            <Section id="branch" label="Branch" />
-            <Section id="deploymentId" label="Deployment ID" />
           </div>
         </>
       )}
