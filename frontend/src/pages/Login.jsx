@@ -1,42 +1,47 @@
 import { useState, useContext } from "react";
-import { useNavigate } from "react-router-dom";
-import axios from "axios";
+import { useNavigate, Link } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
+import { API_ORIGIN } from "../services/apiClient";
 import "../styles/auth.css";
 
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
   const { login } = useContext(AuthContext);
+  const { theme, toggleTheme } = useTheme();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
 
     try {
-      const res = await axios.post(
-        "http://localhost:5001/api/auth/login",
-        { email, password }
-      );
+      const res = await fetch(`${API_ORIGIN}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
 
-      const { user } = res.data;
-      const role = user.role.toLowerCase();
+      const data = await res.json();
 
-      login(role, user);
-      localStorage.setItem("user", JSON.stringify(user));
-      localStorage.setItem("role", role);
+      if (!res.ok) {
+        throw new Error(data.error || "Login failed");
+      }
 
+      // Store full session (user + accessToken + refreshToken)
+      login(data);
       navigate("/dashboard");
     } catch (err) {
-      setError("Login failed. Please check your credentials.");
+      setError(err.message || "Login failed. Please check your credentials.");
+    } finally {
+      setLoading(false);
     }
   };
-
-  const { theme, toggleTheme } = useTheme();
 
   return (
     <div className="auth-container">
@@ -48,6 +53,7 @@ function Login() {
       >
         {theme === "dark" ? "☀️" : "🌙"}
       </button>
+
       <div className="auth-card">
         <div className="auth-left">
           <div className="auth-brand">
@@ -61,28 +67,44 @@ function Login() {
           <h2>Welcome back</h2>
           <p className="auth-subtitle">Sign in to your account</p>
 
-          <form className="auth-form" onSubmit={handleSubmit}>
+          <form className="auth-form" onSubmit={handleSubmit} noValidate>
             <input
+              id="login-email"
               className="auth-input"
               type="email"
               placeholder="Email address"
+              value={email}
               onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+              required
             />
 
             <input
+              id="login-password"
               className="auth-input"
               type="password"
               placeholder="Password"
+              value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
             />
 
-            {error && <p className="auth-error">{error}</p>}
+            {error && <p className="auth-error" role="alert">{error}</p>}
 
-            <button className="auth-btn" type="submit">Sign in</button>
+            <button
+              id="login-submit"
+              className="auth-btn"
+              type="submit"
+              disabled={loading}
+            >
+              {loading ? "Signing in…" : "Sign in"}
+            </button>
           </form>
 
           <p className="auth-footer">
-            Don't have an account? <a href="/signup">Sign up</a>
+            Don&apos;t have an account?{" "}
+            <Link to="/signup">Sign up</Link>
           </p>
         </div>
       </div>

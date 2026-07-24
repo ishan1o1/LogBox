@@ -1,31 +1,50 @@
-import { useState } from "react";
-import axios from "axios";
-import { useNavigate } from "react-router-dom";
+import { useState, useContext } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { AuthContext } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
+import { API_ORIGIN } from "../services/apiClient";
 import "../styles/auth.css";
 
 function Signup() {
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-  });
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
+  const { login } = useContext(AuthContext);
+  const { theme, toggleTheme } = useTheme();
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
+    setLoading(true);
 
-    await axios.post("http://localhost:5001/api/auth/signup", form);
-    alert("Signup successful");
-    navigate("/login");
+    try {
+      const res = await fetch(`${API_ORIGIN}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Registration failed");
+      }
+
+      // Auto-login: store the full session returned from register
+      login(data);
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.message || "Registration failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
-
-  const { theme, toggleTheme } = useTheme();
 
   return (
     <div className="auth-container">
@@ -37,6 +56,7 @@ function Signup() {
       >
         {theme === "dark" ? "☀️" : "🌙"}
       </button>
+
       <div className="auth-card">
         <div className="auth-left">
           <div className="auth-brand">
@@ -50,32 +70,55 @@ function Signup() {
           <h2>Create account</h2>
           <p className="auth-subtitle">Join LogBox to get started</p>
 
-          <form className="auth-form" onSubmit={handleSubmit}>
+          <form className="auth-form" onSubmit={handleSubmit} noValidate>
             <input
+              id="signup-name"
               className="auth-input"
               name="name"
               placeholder="Full name"
+              value={form.name}
               onChange={handleChange}
+              autoComplete="name"
+              required
             />
             <input
+              id="signup-email"
               className="auth-input"
               name="email"
+              type="email"
               placeholder="Email address"
+              value={form.email}
               onChange={handleChange}
+              autoComplete="email"
+              required
             />
             <input
+              id="signup-password"
               className="auth-input"
               name="password"
               type="password"
-              placeholder="Password"
+              placeholder="Password (min 8 characters)"
+              value={form.password}
               onChange={handleChange}
+              autoComplete="new-password"
+              required
             />
 
-            <button className="auth-btn" type="submit">Create account</button>
+            {error && <p className="auth-error" role="alert">{error}</p>}
+
+            <button
+              id="signup-submit"
+              className="auth-btn"
+              type="submit"
+              disabled={loading}
+            >
+              {loading ? "Creating account…" : "Create account"}
+            </button>
           </form>
 
           <p className="auth-footer">
-            Already have an account? <a href="/login">Sign in</a>
+            Already have an account?{" "}
+            <Link to="/login">Sign in</Link>
           </p>
         </div>
       </div>

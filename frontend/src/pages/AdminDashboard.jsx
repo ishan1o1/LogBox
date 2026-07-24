@@ -1,6 +1,7 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
 import { AuthContext } from "../context/AuthContext";
+import { authFetch, API_ORIGIN } from "../services/apiClient";
 import Navbar from "../components/Navbar";
 import Sidebar from "../components/Sidebar";
 import LogToolbar from "../components/LogToolbar";
@@ -13,7 +14,7 @@ import "../styles/dashboard.css";
 import "../styles/RCA.css";
 
 const PAGE_SIZE = 50;
-const SOCKET_URL = "http://localhost:4000";
+const SOCKET_URL = API_ORIGIN;
 
 const DURATION_MS = {
   "30m": 30 * 60 * 1000,
@@ -431,7 +432,7 @@ function AdminDashboard({ initialSection = "logs" }) {
           }
         }
 
-        const response = await fetch(`${SOCKET_URL}/logs?${params.toString()}`);
+        const response = await authFetch(`${SOCKET_URL}/logs?${params.toString()}`);
         const data = await response.json();
         setLogs((prev) => (reset ? data : [...prev, ...data]));
         setHasMore(Array.isArray(data) && data.length === PAGE_SIZE);
@@ -469,7 +470,7 @@ function AdminDashboard({ initialSection = "logs" }) {
       }
       params.set("to", new Date().toISOString());
 
-      const response = await fetch(
+      const response = await authFetch(
         `${SOCKET_URL}/rca/incidents?${params.toString()}`,
       );
       const data = await response.json();

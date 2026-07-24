@@ -385,3 +385,31 @@
     width: min(88vw, 320px);
   }
 }
+
+/* Admin Panel link (bottom of sidebar, shown only to ADMIN role) */
+.sb-admin-link {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 6px;
+  margin-bottom: 4px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background var(--transition), color var(--transition);
+}
+
+.sb-admin-link:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.sb-admin-links {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+

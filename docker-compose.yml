@@ -16,17 +16,121 @@ services:
       timeout: 10s
       retries: 10
 
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.13.0
-    container_name: logbox-kibana
-    environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+  # kibana:
+  #   image: docker.elastic.co/kibana/kibana:8.13.0
+  #   container_name: logbox-kibana
+  #   environment:
+  #     - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+  #   ports:
+  #     - "5601:5601"
+  #   depends_on:
+  #     elasticsearch:
+  #       condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    container_name: logbox-redis
     ports:
-      - "5601:5601"
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mongodb:
+    image: mongo:7
+    container_name: logbox-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./server
+    container_name: logbox-api
+    env_file:
+      - ./server/.env
+    environment:
+      - PORT=4000
+      - REDIS_URL=redis://redis:6379
+      - ELASTICSEARCH_NODE=http://elasticsearch:9200
+      - MONGO_URI=mongodb://mongodb:27017/logbox
+      # Allow the browser to reach the API from the host machine.
+      # If you expose the frontend on a custom domain, update this.
+      - CORS_ORIGIN=http://localhost:5173
+      # DLQ / retry pipeline
+      - MAX_RETRY_ATTEMPTS=5
+      - INITIAL_RETRY_DELAY_MS=1000
+      - RETRY_BACKOFF_FACTOR=2
+      - RETRY_STREAM=logs:retry
+      - DLQ_STREAM=logbox:logs:stream:dlq
+    ports:
+      - "4000:4000"
     depends_on:
       elasticsearch:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+
+  worker:
+    build: ./server
+    container_name: logbox-worker
+    command: ["npm", "run", "worker"]
+    env_file:
+      - ./server/.env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - ELASTICSEARCH_NODE=http://elasticsearch:9200
+      - MONGO_URI=mongodb://mongodb:27017/logbox
+      # DLQ / retry pipeline
+      - MAX_RETRY_ATTEMPTS=5
+      - INITIAL_RETRY_DELAY_MS=1000
+      - RETRY_BACKOFF_FACTOR=2
+      - RETRY_STREAM=logs:retry
+      - DLQ_STREAM=logbox:logs:stream:dlq
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Frontend ─────────────────────────────────────────────────────────────────
+  # Builds the React/Vite app (with VITE_API_ORIGIN baked in) and serves it
+  # with Nginx on port 5173 (mapped from container port 80).
+  #
+  # VITE_API_ORIGIN must resolve from the BROWSER, not from inside Docker.
+  # So we use localhost:4000 — the api container's host-mapped port.
+  #
+  # For a proper production deploy (custom domain + TLS) change this to:
+  #   VITE_API_ORIGIN=https://api.yourdomain.com
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_ORIGIN: http://localhost:4000
+    container_name: logbox-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+    restart: unless-stopped
 
 volumes:
   esdata:
     driver: local
+  redisdata:
+    driver: local
+  mongodata:
+    driver: local
+

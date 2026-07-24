@@ -2,15 +2,40 @@ require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const helmet = require("helmet");
 const http = require("http");
 const { Server } = require("socket.io");
-const { addLog } = require("./services/logBuffer");
 const createLogsIndex = require("./utils/createIndex");
 const rcaRoutes = require("./modules/rca/rca.routes");
+const authRoutes = require("./src/auth/auth.routes");
+const apiKeyRoutes = require("./src/routes/apikeys.routes");
+const userRoutes = require("./src/routes/users.routes");
+const dlqRoutes = require("./src/routes/dlq.routes");
+const metricsRoutes = require("./src/routes/metrics.routes");
+const authenticateJWT = require("./src/middleware/authenticateJWT");
+const authenticateApiKey = require("./src/middleware/authenticateApiKey");
+const authorizeRoles = require("./src/middleware/authorizeRoles");
+const { apiRateLimiter, logIngestRateLimiter } = require("./src/middleware/rateLimiters");
+const { notFound, errorHandler } = require("./src/middleware/errorHandler");
+const { ROLES } = require("./src/models/User");
 const client = require("./config/elasticsearch");
+const {
+  LOG_QUEUE_KEY,
+  createRedisClient,
+  connectRedisClient,
+  closeRedisClient,
+} = require("./config/redis");
 
 const app = express();
 const server = http.createServer(app);
+const redisQueueClient = createRedisClient("api");
+const allowedOrigins = (process.env.CORS_ORIGIN || "*")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const corsOptions = allowedOrigins.includes("*")
+  ? { origin: "*" }
+  : { origin: allowedOrigins, credentials: true };
 const WRITE_LOGS_INDEX = process.env.ELASTICSEARCH_WRITE_INDEX || "logs";
 const READ_LOGS_INDICES = Array.from(
   new Set([
@@ -21,13 +46,23 @@ const READ_LOGS_INDICES = Array.from(
 ).join(",");
 
 const io = new Server(server, {
-  cors: { origin: "*" },
+  cors: corsOptions,
 });
 
 app.set("io", io);
-app.use(cors());
-app.use(express.json());
-app.use("/rca", rcaRoutes);
+app.use(helmet());
+app.use(cors(corsOptions));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "1mb" }));
+app.use("/auth", authRoutes);
+app.use("/apikeys", apiKeyRoutes);
+app.use("/users", userRoutes);
+app.use("/rca", apiRateLimiter, authenticateJWT, authorizeRoles(ROLES.ADMIN, ROLES.DEVELOPER), rcaRoutes);
+
+// ── Dead Letter Queue — list/view: ADMIN+DEV, replay/delete: ADMIN only (enforced in dlq.routes)
+app.use("/dlq", apiRateLimiter, authenticateJWT, authorizeRoles(ROLES.ADMIN, ROLES.DEVELOPER), dlqRoutes);
+
+// ── Ingestion metrics — ADMIN + DEVELOPER
+app.use("/metrics", apiRateLimiter, authenticateJWT, authorizeRoles(ROLES.ADMIN, ROLES.DEVELOPER), metricsRoutes);
 
 (async () => {
   try {
@@ -41,7 +76,11 @@ app.use("/rca", rcaRoutes);
 
 createLogsIndex();
 
-const MONGO_URI = "mongodb://localhost:27017/logs";
+connectRedisClient(redisQueueClient).catch((err) => {
+  console.error("Redis connection failed:", err.message);
+});
+
+const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/logs";
 
 mongoose.connect(MONGO_URI)
   .then(() => console.log("MongoDB connected"))
@@ -288,24 +327,50 @@ function buildAnalyticsPayload(logs, start, end) {
   };
 }
 
-app.post("/log", async (req, res) => {
+app.post(
+  "/log",
+  logIngestRateLimiter,
+  authenticateApiKey,
+  authorizeRoles(ROLES.SERVICE),
+  async (req, res) => {
   try {
     const incoming = req.body;
     const logs = Array.isArray(incoming) ? incoming : [incoming];
+    const normalizedLogs = logs.map(normalizeIncomingLog);
 
-    logs.forEach((log) => {
-      const normalizedLog = normalizeIncomingLog(log);
-      addLog(normalizedLog);
-      const payload = { ...normalizedLog, _emittedAt: Date.now() };
+    await connectRedisClient(redisQueueClient);
+    await Promise.all(
+      normalizedLogs.map((log) =>
+        redisQueueClient.sendCommand([
+          "XADD",
+          LOG_QUEUE_KEY,
+          "*",
+          "log",
+          JSON.stringify(log),
+          "attempts",
+          "0",
+        ])
+      )
+    );
+
+    normalizedLogs.forEach((normalizedLog) => {
+      const emittedAt = Date.now();
+      const payload = { ...normalizedLog, _queuedAt: emittedAt, _emittedAt: emittedAt };
       req.app.get("io").emit("new-log", payload);
     });
-    res.status(200).json({ status: "stored", count: logs.length });
+
+    res.status(200).json({ status: "queued", count: normalizedLogs.length });
   } catch (err) {
-    console.error("Elasticsearch error:", err);
+    console.error("Redis stream enqueue error:", err);
     res.status(500).json({ error: err.message });
   }
 });
-app.get("/logs", async (req, res) => {
+app.get(
+  "/logs",
+  apiRateLimiter,
+  authenticateJWT,
+  authorizeRoles(ROLES.ADMIN, ROLES.DEVELOPER, ROLES.VIEWER),
+  async (req, res) => {
   try {
     const {
       levels,
@@ -406,7 +471,12 @@ app.get("/logs", async (req, res) => {
   }
 });
 
-app.get("/logs/analytics", async (req, res) => {
+app.get(
+  "/logs/analytics",
+  apiRateLimiter,
+  authenticateJWT,
+  authorizeRoles(ROLES.ADMIN, ROLES.DEVELOPER, ROLES.VIEWER),
+  async (req, res) => {
   try {
     const end = req.query.end || new Date().toISOString();
     const start = req.query.start || new Date(Date.now() - 30 * 60 * 1000).toISOString();
@@ -433,6 +503,9 @@ app.get("/logs/analytics", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+app.use(notFound);
+app.use(errorHandler);
 
 io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
@@ -506,3 +579,13 @@ const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   console.log(`Log server running on ${PORT}`);
 });
+
+async function shutdown() {
+  await closeRedisClient(redisQueueClient).catch((err) => {
+    console.error("Redis shutdown error:", err.message);
+  });
+  process.exit(0);
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
