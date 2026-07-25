@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useContext, useRef } from "react";
+import { Link } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
 import Navbar from "../components/Navbar";
 import {
@@ -332,26 +333,56 @@ function DLQPage() {
     <div className="dlq-page">
       <Navbar user={user} logout={logout} title="Dead Letter Queue" />
 
-      <main className="dlq-main">
-
-        {/* ── Toast ─────────────────────────────────────────────────────── */}
-        {toast && (
-          <div className={`dlq-toast dlq-toast--${toast.type}`} role="alert">
-            {toast.type === "success"
-              ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-            }
-            {toast.msg}
+      <div className="dlq-page-body">
+        {/* Sidebar Nav */}
+        <aside className="dlq-panel-nav">
+          <div className="dlq-nav-brand">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            <span>Fault Tolerance</span>
           </div>
-        )}
 
-        {/* ── Page header ────────────────────────────────────────────────── */}
-        <div className="dlq-header">
-          <div className="dlq-header-left">
-            <div className="dlq-header-eyebrow">Fault Tolerance</div>
-            <h1>Dead Letter Queue</h1>
-            <p>Logs that exhausted all retry attempts. Replay them once Elasticsearch is healthy.</p>
+          <nav className="dlq-nav-list">
+            <div className="dlq-nav-item active">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="2" y="6" width="20" height="12" rx="2" />
+                <path d="M12 12h.01" />
+              </svg>
+              Dead Letter Queue
+            </div>
+          </nav>
+
+          <div className="dlq-nav-back">
+            <Link to="/dashboard" className="dlq-nav-back-link">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+              Back to Dashboard
+            </Link>
           </div>
+        </aside>
+
+        <main className="dlq-main">
+
+          {/* ── Toast ─────────────────────────────────────────────────────── */}
+          {toast && (
+            <div className={`dlq-toast dlq-toast--${toast.type}`} role="alert">
+              {toast.type === "success"
+                ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+              }
+              {toast.msg}
+            </div>
+          )}
+
+          {/* ── Page header ────────────────────────────────────────────────── */}
+          <div className="dlq-header">
+            <div className="dlq-header-left">
+              <div className="dlq-header-eyebrow">Fault Tolerance</div>
+              <h1>Dead Letter Queue</h1>
+              <p>Logs that exhausted all retry attempts. Replay them once Elasticsearch is healthy.</p>
+            </div>
 
           <div className="dlq-header-actions">
             <label className="dlq-auto-refresh">
@@ -545,7 +576,8 @@ function DLQPage() {
 
       </main>
     </div>
-  );
+  </div>
+);
 }
 
 export default DLQPage;

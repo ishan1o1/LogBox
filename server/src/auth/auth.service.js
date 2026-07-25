@@ -1,5 +1,6 @@
 const bcrypt = require("bcrypt");
 const User = require("../models/User");
+const Organization = require("../models/Organization");
 const { ROLES } = User;
 const RefreshToken = require("../models/RefreshToken");
 const { REFRESH_TOKEN_DAYS } = require("../config/auth");
@@ -18,6 +19,12 @@ function serializeUser(user) {
         name: user.name,
         email: user.email,
         role: user.role,
+        organization: user.organization
+          ? (user.organization._id ? user.organization._id.toString() : user.organization.toString())
+          : null,
+        assignedProjects: Array.isArray(user.assignedProjects)
+          ? user.assignedProjects.map((p) => (p._id ? p._id.toString() : p.toString()))
+          : [],
         createdAt: user.createdAt,
       };
 }
@@ -36,16 +43,33 @@ async function issueTokenPair(user) {
   return { accessToken, refreshToken, refreshTokenExpiresAt: expiresAt };
 }
 
-async function registerUser({ name, email, password }) {
+async function registerUser({ name, email, password, organizationName }) {
   const existing = await User.findOne({ email });
   if (existing) {
     throw new AppError(409, "Email is already registered");
   }
 
-  const userCount = await User.estimatedDocumentCount();
-  const role = userCount === 0 ? ROLES.ADMIN : ROLES.VIEWER;
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-  const user = await User.create({ name, email, passwordHash, role });
+
+  const orgName = organizationName || `${name}'s Organization`;
+  const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+  const org = await Organization.create({
+    name: orgName,
+    slug: slug || `org-${Date.now()}`,
+  });
+
+  const user = await User.create({
+    name,
+    email,
+    passwordHash,
+    role: ROLES.ADMIN,
+    organization: org._id,
+  });
+
+  org.owner = user._id;
+  await org.save();
+
   const tokens = await issueTokenPair(user);
 
   return { user: serializeUser(user), ...tokens };

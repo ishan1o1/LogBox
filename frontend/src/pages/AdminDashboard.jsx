@@ -7,11 +7,7 @@ import Sidebar from "../components/Sidebar";
 import LogToolbar from "../components/LogToolbar";
 import LogTable from "../components/LogTable";
 import AnalyticsOverview from "../components/AnalyticsOverview";
-import IncidentCard from "../components/IncidentCard";
-import RCAModal from "../components/RCAModal";
-import { analyzeIncident, getGroupedIncidents } from "../services/rcaApi";
 import "../styles/dashboard.css";
-import "../styles/RCA.css";
 
 const PAGE_SIZE = 50;
 const SOCKET_URL = API_ORIGIN;
@@ -57,19 +53,6 @@ const CLIENT_FIELD_MAP = {
   fingerprint: { field: "fingerprint", numeric: false },
 };
 
-const INSIGHT_DURATION_OPTIONS = [
-  { label: "Last 30 minutes", value: "30m", ms: 30 * 60 * 1000 },
-  { label: "Last hour", value: "1h", ms: 60 * 60 * 1000 },
-  { label: "Last 6 hours", value: "6h", ms: 6 * 60 * 60 * 1000 },
-  { label: "Last 12 hours", value: "12h", ms: 12 * 60 * 60 * 1000 },
-  { label: "Last day", value: "1d", ms: 24 * 60 * 60 * 1000 },
-  { label: "Last 3 days", value: "3d", ms: 3 * 24 * 60 * 60 * 1000 },
-  { label: "Last week", value: "7d", ms: 7 * 24 * 60 * 60 * 1000 },
-  { label: "Last 2 weeks", value: "14d", ms: 14 * 24 * 60 * 60 * 1000 },
-  { label: "Last 30 days", value: "30d", ms: 30 * 24 * 60 * 60 * 1000 },
-  { label: "All time", value: "ALL", ms: 10 * 365 * 24 * 60 * 60 * 1000 },
-];
-
 const ANALYTICS_DURATION_OPTIONS = [
   { label: "Last 30 minutes", value: "30m" },
   { label: "Last hour", value: "1h" },
@@ -82,20 +65,6 @@ const ANALYTICS_DURATION_OPTIONS = [
   { label: "Last 30 days", value: "30d" },
   { label: "All time", value: "ALL" },
 ];
-
-function getWindowForDuration(value) {
-  const selected = INSIGHT_DURATION_OPTIONS.find(
-    (option) => option.value === value,
-  );
-  const durationMs = selected?.ms || 24 * 60 * 60 * 1000;
-  const to = new Date();
-  const from = new Date(to.getTime() - durationMs);
-
-  return {
-    from: from.toISOString(),
-    to: to.toISOString(),
-  };
-}
 
 function normalizeLevelForFilter(value) {
   const normalized = String(value || "")
@@ -118,134 +87,6 @@ function normalizeLevelForFilter(value) {
 
 function expandLevelFilters(levels = []) {
   return levels.flatMap((level) => LEVEL_FILTER_MAP[level] || [level]);
-}
-
-function InsightsPanel({
-  duration,
-  onDurationChange,
-  incidents,
-  loadingIncidents,
-  incidentsError,
-  onRefresh,
-  onAnalyze,
-  analysisLoadingFor,
-  selectedIncident,
-  selectedAnalysis,
-  analysisError,
-  onCloseAnalysis,
-  timeWindow,
-  sidebarOpen,
-  onOpenSidebar,
-}) {
-  return (
-    <div className="section-scroll-page">
-      {!sidebarOpen && (
-        <button
-          className="page-sidebar-open-btn icon-btn"
-          onClick={onOpenSidebar}
-          title="Open Workspace"
-        >
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="3" y1="12" x2="21" y2="12"></line>
-            <line x1="3" y1="6" x2="21" y2="6"></line>
-            <line x1="3" y1="18" x2="21" y2="18"></line>
-          </svg>
-        </button>
-      )}
-
-      <section className="rca-hero">
-        <div>
-          <span className="rca-hero-eyebrow">Insights</span>
-          <h1>Grouped incidents with RCA</h1>
-          <p>
-            Review recurring failures, then open one incident to generate an
-            explanation with evidence, blast radius, and next-step fixes.
-          </p>
-        </div>
-
-        <div className="rca-controls">
-          <label className="rca-duration-field">
-            <span>Time Window</span>
-            <select
-              value={duration}
-              onChange={(event) => onDurationChange(event.target.value)}
-            >
-              {INSIGHT_DURATION_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <button
-            className="rca-refresh-btn"
-            onClick={onRefresh}
-            disabled={loadingIncidents}
-          >
-            {loadingIncidents ? "Refreshing..." : "Refresh Incidents"}
-          </button>
-        </div>
-      </section>
-
-      <section className="rca-results">
-        <div className="rca-results-head">
-          <div>
-            <span className="rca-results-label">Grouped Incidents</span>
-            <h2>{incidents.length} incidents ready for analysis</h2>
-          </div>
-          <p>
-            Range: {new Date(timeWindow.from).toLocaleString()} to{" "}
-            {new Date(timeWindow.to).toLocaleString()}
-          </p>
-        </div>
-
-        {incidentsError && (
-          <div className="rca-inline-error">{incidentsError}</div>
-        )}
-
-        {!loadingIncidents && incidents.length === 0 && !incidentsError && (
-          <div className="rca-empty-state">
-            <h3>No grouped incidents found</h3>
-            <p>
-              Try widening the time range or refresh after more logs arrive.
-            </p>
-          </div>
-        )}
-
-        <div className="rca-grid">
-          {incidents.map((incident) => (
-            <IncidentCard
-              key={incident.fingerprint}
-              incident={incident}
-              onAnalyze={onAnalyze}
-              loading={analysisLoadingFor === incident.fingerprint}
-            />
-          ))}
-        </div>
-      </section>
-
-      <RCAModal
-        incident={selectedIncident}
-        analysis={selectedAnalysis}
-        loading={
-          Boolean(selectedIncident) &&
-          analysisLoadingFor === selectedIncident.fingerprint
-        }
-        error={analysisError}
-        onClose={onCloseAnalysis}
-      />
-    </div>
-  );
 }
 
 function AnalyticsPanel({
@@ -304,26 +145,15 @@ function AdminDashboard({ initialSection = "logs" }) {
   const { user, logout } = useContext(AuthContext);
 
   const [logs, setLogs] = useState([]);
-  const [incidents, setIncidents] = useState([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isLive, setIsLive] = useState(true);
-  const [viewMode, setViewMode] = useState("raw");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSection, setActiveSection] = useState(initialSection);
   const [analyticsVersion, setAnalyticsVersion] = useState(0);
   const [analyticsDuration, setAnalyticsDuration] = useState("ALL");
-
-  const [insightsDuration, setInsightsDuration] = useState("ALL");
-  const [insightsIncidents, setInsightsIncidents] = useState([]);
-  const [loadingInsights, setLoadingInsights] = useState(false);
-  const [insightsError, setInsightsError] = useState("");
-  const [selectedIncident, setSelectedIncident] = useState(null);
-  const [analysisByFingerprint, setAnalysisByFingerprint] = useState({});
-  const [analysisLoadingFor, setAnalysisLoadingFor] = useState("");
-  const [analysisError, setAnalysisError] = useState("");
 
   const [filters, setFilters] = useState({
     duration: "ALL",
@@ -354,11 +184,6 @@ function AdminDashboard({ initialSection = "logs" }) {
     const ms = DURATION_MS[analyticsDuration];
     return ms ? new Date(Date.now() - ms).toISOString() : null;
   }, [analyticsDuration]);
-
-  const insightsTimeWindow = useMemo(
-    () => getWindowForDuration(insightsDuration),
-    [insightsDuration],
-  );
 
   const parsedSearch = useMemo(() => {
     const result = { level: null, service: null, meta: {}, freeText: "" };
@@ -445,67 +270,17 @@ function AdminDashboard({ initialSection = "logs" }) {
     [filters.levels, filters.service, logsStartTime, parsedSearch],
   );
 
-  const fetchIncidents = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      const selectedLevels = parsedSearch.level
-        ? [parsedSearch.level]
-        : filters.levels;
-      const backendLevels = expandLevelFilters(selectedLevels).filter(Boolean);
-      const routeParam = parsedSearch.meta.route || filters.route || "";
-      const moduleParam = parsedSearch.meta.module || "";
-
-      if (backendLevels.length > 0) {
-        params.set("levels", backendLevels.join(",").toLowerCase());
-      }
-      if (routeParam) {
-        params.set("route", routeParam);
-      }
-      if (moduleParam) {
-        params.set("module", moduleParam);
-      }
-      if (logsStartTime) {
-        params.set("from", logsStartTime);
-      }
-      params.set("to", new Date().toISOString());
-
-      const response = await authFetch(
-        `${SOCKET_URL}/rca/incidents?${params.toString()}`,
-      );
-      const data = await response.json();
-      setIncidents(data.incidents || []);
-      setHasMore(false);
-    } catch (error) {
-      console.error("Fetch incidents error:", error);
-      setIncidents([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    filters.levels,
-    filters.route,
-    logsStartTime,
-    parsedSearch.level,
-    parsedSearch.meta.module,
-    parsedSearch.meta.route,
-  ]);
-
   useEffect(() => {
     setActiveSection(initialSection);
   }, [initialSection]);
 
   useEffect(() => {
     setPage(1);
-    if (viewMode === "grouped") {
-      fetchIncidents();
-      return;
-    }
     fetchPage(1, true);
-  }, [fetchIncidents, fetchPage, viewMode]);
+  }, [fetchPage]);
 
   useEffect(() => {
-    if (!isLive || viewMode !== "raw") {
+    if (!isLive) {
       return undefined;
     }
 
@@ -530,80 +305,18 @@ function AdminDashboard({ initialSection = "logs" }) {
     });
 
     return () => socket.disconnect();
-  }, [isLive, logsStartTime, viewMode]);
-
-  const loadInsights = useCallback(async () => {
-    setLoadingInsights(true);
-    setInsightsError("");
-
-    try {
-      const payload = await getGroupedIncidents(insightsTimeWindow);
-      setInsightsIncidents(payload.incidents || []);
-    } catch (error) {
-      setInsightsIncidents([]);
-      setInsightsError(error.message || "Failed to load incidents");
-    } finally {
-      setLoadingInsights(false);
-    }
-  }, [insightsTimeWindow]);
-
-  useEffect(() => {
-    if (activeSection !== "insights") {
-      return;
-    }
-    loadInsights();
-  }, [activeSection, loadInsights]);
-
-  const handleAnalyzeIncident = useCallback(
-    async (incident) => {
-      setSelectedIncident(incident);
-      setAnalysisError("");
-
-      if (analysisByFingerprint[incident.fingerprint]) {
-        return;
-      }
-
-      setAnalysisLoadingFor(incident.fingerprint);
-
-      try {
-        const payload = await analyzeIncident({
-          fingerprint: incident.fingerprint,
-          syntheticFilter: incident.syntheticFilter,
-          ...insightsTimeWindow,
-        });
-
-        setAnalysisByFingerprint((prev) => ({
-          ...prev,
-          [incident.fingerprint]: payload,
-        }));
-      } catch (error) {
-        setAnalysisError(error.message || "Failed to analyze incident");
-      } finally {
-        setAnalysisLoadingFor("");
-      }
-    },
-    [analysisByFingerprint, insightsTimeWindow],
-  );
+  }, [isLive, logsStartTime]);
 
   const handleLoadMore = useCallback(() => {
-    if (viewMode === "grouped") {
-      fetchIncidents();
-      return;
-    }
-
     const nextPage = page + 1;
     setPage(nextPage);
     fetchPage(nextPage, false);
-  }, [fetchIncidents, fetchPage, page, viewMode]);
+  }, [fetchPage, page]);
 
   const handleRefresh = useCallback(() => {
     setPage(1);
-    if (viewMode === "grouped") {
-      fetchIncidents();
-      return;
-    }
     fetchPage(1, true);
-  }, [fetchIncidents, fetchPage, viewMode]);
+  }, [fetchPage]);
 
   const filteredLogs = useMemo(() => {
     let result = logs;
@@ -669,14 +382,12 @@ function AdminDashboard({ initialSection = "logs" }) {
   }, [filters.levels, filters.service, logs, parsedSearch]);
 
   const handleExport = () => {
-    const payload = viewMode === "grouped" ? incidents : filteredLogs;
-    const json = JSON.stringify(payload, null, 2);
+    const json = JSON.stringify(filteredLogs, null, 2);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const suffix = viewMode === "grouped" ? "incidents" : "logs";
     link.href = url;
-    link.download = `logbox-${suffix}-${new Date().toISOString().slice(0, 19)}.json`;
+    link.download = `logbox-logs-${new Date().toISOString().slice(0, 19)}.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -692,10 +403,6 @@ function AdminDashboard({ initialSection = "logs" }) {
     return counts;
   }, [logs]);
 
-  const selectedAnalysis = selectedIncident
-    ? analysisByFingerprint[selectedIncident.fingerprint]
-    : null;
-
   const handleSectionChange = useCallback((section) => {
     setActiveSection(section);
     if (section === "logs") {
@@ -706,7 +413,6 @@ function AdminDashboard({ initialSection = "logs" }) {
   const titleMap = {
     logs: "Logs",
     analytics: "Analytics",
-    insights: "Insights",
   };
 
   return (
@@ -732,12 +438,6 @@ function AdminDashboard({ initialSection = "logs" }) {
                 onSearchChange={setSearchQuery}
                 isLive={isLive}
                 onToggleLive={() => setIsLive((prev) => !prev)}
-                viewMode={viewMode}
-                onToggleGrouped={() =>
-                  setViewMode((prev) =>
-                    prev === "grouped" ? "raw" : "grouped",
-                  )
-                }
                 onRefresh={handleRefresh}
                 onExport={handleExport}
                 loading={loading}
@@ -746,20 +446,10 @@ function AdminDashboard({ initialSection = "logs" }) {
               />
 
               <LogTable
-                logs={viewMode === "grouped" ? incidents : filteredLogs}
+                logs={filteredLogs}
                 hasMore={hasMore}
                 loading={loading}
                 onLoadMore={handleLoadMore}
-                viewMode={viewMode}
-                onIncidentClick={(incident) => {
-                  if (incident.syntheticFilter) {
-                    setSearchQuery(incident.syntheticFilter);
-                  } else {
-                    setSearchQuery(`fingerprint:${incident.fingerprint}`);
-                  }
-                  setViewMode("raw");
-                  setSidebarOpen(true);
-                }}
               />
             </>
           )}
@@ -773,29 +463,6 @@ function AdminDashboard({ initialSection = "logs" }) {
               onOpenSidebar={() => setSidebarOpen(true)}
               analyticsDuration={analyticsDuration}
               onAnalyticsDurationChange={setAnalyticsDuration}
-            />
-          )}
-
-          {activeSection === "insights" && (
-            <InsightsPanel
-              duration={insightsDuration}
-              onDurationChange={setInsightsDuration}
-              incidents={insightsIncidents}
-              loadingIncidents={loadingInsights}
-              incidentsError={insightsError}
-              onRefresh={loadInsights}
-              onAnalyze={handleAnalyzeIncident}
-              analysisLoadingFor={analysisLoadingFor}
-              selectedIncident={selectedIncident}
-              selectedAnalysis={selectedAnalysis}
-              analysisError={analysisError}
-              onCloseAnalysis={() => {
-                setSelectedIncident(null);
-                setAnalysisError("");
-              }}
-              timeWindow={insightsTimeWindow}
-              sidebarOpen={sidebarOpen}
-              onOpenSidebar={() => setSidebarOpen(true)}
             />
           )}
         </main>

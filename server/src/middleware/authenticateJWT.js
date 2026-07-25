@@ -21,7 +21,23 @@ async function authenticateJWT(req, res, next) {
       throw new AppError(401, "User no longer exists");
     }
 
+    if (user.disabled) {
+      throw new AppError(403, "Account is disabled. Contact your administrator.");
+    }
+
+    const organizationId = user.organization
+      ? (user.organization._id ? user.organization._id.toString() : user.organization.toString())
+      : (payload.organizationId || null);
+
+    const assignedProjects = Array.isArray(user.assignedProjects)
+      ? user.assignedProjects.map((p) => (p._id ? p._id.toString() : p.toString()))
+      : [];
+
     req.user = user;
+    req.organizationId = organizationId;
+    req.userRole = user.role;
+    req.assignedProjects = assignedProjects;
+
     next();
   } catch (error) {
     if (error.name === "JsonWebTokenError" || error.name === "TokenExpiredError") {

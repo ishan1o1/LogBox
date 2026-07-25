@@ -85,23 +85,26 @@
   justify-content: center;
 }
 
-.topbar-dots {
-  width: 28px;
+.topbar-logout-btn {
   height: 28px;
+  padding: 0 10px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 6px;
   background: none;
-  border: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   cursor: pointer;
-  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
   transition: all var(--transition);
 }
 
-.topbar-dots:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+.topbar-logout-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #f87171;
 }
 
 @media (max-width: 620px) {

@@ -16,8 +16,9 @@ const register = asyncHandler(async (req, res) => {
   const name = requiredString(req.body, "name", { min: 2, max: 120 });
   const email = validateEmail(req.body?.email);
   const password = validatePassword(req.body?.password);
+  const organizationName = req.body?.organizationName || req.body?.orgName;
 
-  const result = await registerUser({ name, email, password });
+  const result = await registerUser({ name, email, password, organizationName });
   res.status(201).json(result);
 });
 

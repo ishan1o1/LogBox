@@ -9,6 +9,8 @@ async function authenticateApiKey(req, res, next) {
       role: "SERVICE",
       id: apiKey._id.toString(),
       serviceName: apiKey.serviceName,
+      project: apiKey.project,
+      organization: apiKey.organization,
       owner: apiKey.owner,
       permissions: apiKey.permissions,
       key: serializeApiKey(apiKey),

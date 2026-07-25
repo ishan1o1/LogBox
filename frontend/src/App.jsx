@@ -24,14 +24,6 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/rca"
-          element={
-            <ProtectedRoute>
-              <AdminDashboard initialSection="insights" />
-            </ProtectedRoute>
-          }
-        />
 
         {/* Protected: ADMIN only */}
         <Route

@@ -16,15 +16,13 @@ function fmtDateTime(ts) {
   return new Date(ts).toLocaleString();
 }
 
-function LogTable({ logs, hasMore, loading, onLoadMore, viewMode = "raw", onIncidentClick }) {
+function LogTable({ logs, hasMore, loading, onLoadMore }) {
   const [expandedRow, setExpandedRow] = useState(null);
   const tableRef = useRef(null);
-  const isGroupedView = viewMode === "grouped";
 
   const toggleRow = (idx) => setExpandedRow((prev) => (prev === idx ? null : idx));
 
   useEffect(() => {
-    if (isGroupedView) return undefined;
     const el = tableRef.current;
     if (!el) return undefined;
 
@@ -36,7 +34,7 @@ function LogTable({ logs, hasMore, loading, onLoadMore, viewMode = "raw", onInci
 
     el.addEventListener("scroll", handler);
     return () => el.removeEventListener("scroll", handler);
-  }, [hasMore, isGroupedView, loading, onLoadMore]);
+  }, [hasMore, loading, onLoadMore]);
 
   if (logs.length === 0 && !loading) {
     return (
@@ -49,7 +47,7 @@ function LogTable({ logs, hasMore, loading, onLoadMore, viewMode = "raw", onInci
           </svg>
         </div>
         <p className="lt-empty-title">
-          {isGroupedView ? "There are no grouped incidents for this filter set" : "There are no runtime logs in this time range"}
+          There are no runtime logs in this time range
         </p>
         <div className="lt-empty-actions">
           <button className="lt-empty-btn primary" onClick={onLoadMore}>Refresh Query</button>
@@ -61,43 +59,35 @@ function LogTable({ logs, hasMore, loading, onLoadMore, viewMode = "raw", onInci
 
   return (
     <div className="lt-wrap" ref={tableRef}>
-      {!isGroupedView && (
-        <>
-          <div className="lt-timeline-bar">
-            <div className="lt-timeline-line" />
-          </div>
+      <div className="lt-timeline-bar">
+        <div className="lt-timeline-line" />
+      </div>
 
-          <div className="lt-header">
-            <span className="lt-h lt-h-time">Time</span>
-            <span className="lt-h lt-h-status">Status</span>
-            <span className="lt-h lt-h-host">Host</span>
-            <span className="lt-h lt-h-request">Request</span>
-            <span className="lt-h lt-h-message">Messages</span>
-          </div>
-        </>
-      )}
+      <div className="lt-header">
+        <span className="lt-h lt-h-time">Time</span>
+        <span className="lt-h lt-h-status">Status</span>
+        <span className="lt-h lt-h-host">Host</span>
+        <span className="lt-h lt-h-request">Request</span>
+        <span className="lt-h lt-h-message">Messages</span>
+      </div>
 
       <div className="lt-rows">
-        {isGroupedView ? (
-          <IncidentTable incidents={logs} onIncidentClick={onIncidentClick} />
-        ) : (
-          logs.map((log, idx) => (
-            <div key={log._id || idx} className="lt-row-wrap">
-              <button
-                className={`lt-row ${expandedRow === idx ? "expanded" : ""}`}
-                onClick={() => toggleRow(idx)}
-              >
-                <span className="lt-c lt-c-time">{fmtTime(log.timestamp)}</span>
-                <span className="lt-c lt-c-status">{log.level}</span>
-                <span className="lt-c lt-c-host">{log.service || "-"}</span>
-                <span className="lt-c lt-c-request">{log.meta?.route || log.route || log.meta?.method || log.method || "-"}</span>
-                <span className="lt-c lt-c-message">{log.message}</span>
-              </button>
+        {logs.map((log, idx) => (
+          <div key={log._id || idx} className="lt-row-wrap">
+            <button
+              className={`lt-row ${expandedRow === idx ? "expanded" : ""}`}
+              onClick={() => toggleRow(idx)}
+            >
+              <span className="lt-c lt-c-time">{fmtTime(log.timestamp)}</span>
+              <span className="lt-c lt-c-status">{log.level}</span>
+              <span className="lt-c lt-c-host">{log.service || "-"}</span>
+              <span className="lt-c lt-c-request">{log.meta?.route || log.route || log.meta?.method || log.method || "-"}</span>
+              <span className="lt-c lt-c-message">{log.message}</span>
+            </button>
 
-              {expandedRow === idx && <LogDetailPanel log={log} />}
-            </div>
-          ))
-        )}
+            {expandedRow === idx && <LogDetailPanel log={log} />}
+          </div>
+        ))}
 
         {loading && (
           <div className="lt-loading">
@@ -106,51 +96,10 @@ function LogTable({ logs, hasMore, loading, onLoadMore, viewMode = "raw", onInci
           </div>
         )}
 
-        {!isGroupedView && !hasMore && logs.length > 0 && (
+        {!hasMore && logs.length > 0 && (
           <div className="lt-end">All logs loaded - {logs.length.toLocaleString()} total</div>
         )}
       </div>
-    </div>
-  );
-}
-
-function IncidentTable({ incidents, onIncidentClick }) {
-  return (
-    <div className="lt-incident-table-wrap">
-      <table className="lt-incident-table">
-        <thead>
-          <tr>
-            <th>Error</th>
-            <th>Count</th>
-            <th>Route</th>
-            <th>Method</th>
-            <th>First Seen</th>
-            <th>Last Seen</th>
-            <th>Severity</th>
-          </tr>
-        </thead>
-        <tbody>
-          {incidents.map((incident) => (
-            <tr
-              key={incident.fingerprint}
-              onClick={() => onIncidentClick && onIncidentClick(incident)}
-              style={{ cursor: onIncidentClick ? "pointer" : "default" }}
-            >
-              <td>{incident.title}</td>
-              <td>{incident.count}</td>
-              <td>{incident.route || "-"}</td>
-              <td>{incident.method || "-"}</td>
-              <td>{fmtDateTime(incident.firstSeen)}</td>
-              <td>{fmtDateTime(incident.lastSeen)}</td>
-              <td>
-                <span className={`lt-incident-severity severity-${String(incident.severity || "high").toLowerCase()}`}>
-                  {incident.severity || "high"}
-                </span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }

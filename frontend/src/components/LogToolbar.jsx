@@ -76,8 +76,6 @@ function LogToolbar({
   onSearchChange,
   isLive,
   onToggleLive,
-  viewMode,
-  onToggleGrouped,
   onRefresh,
   onExport,
   loading,
@@ -276,19 +274,6 @@ function LogToolbar({
           <span>Live</span>
         </button>
 
-        <button
-          className={`toolbar-live ${viewMode === "grouped" ? "on" : ""}`}
-          onClick={onToggleGrouped}
-          title="Toggle grouped incidents"
-        >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <rect x="2.25" y="2.25" width="4.5" height="4.5" rx="1" />
-            <rect x="9.25" y="2.25" width="4.5" height="4.5" rx="1" />
-            <rect x="2.25" y="9.25" width="4.5" height="4.5" rx="1" />
-            <rect x="9.25" y="9.25" width="4.5" height="4.5" rx="1" />
-          </svg>
-          <span>Group Logs</span>
-        </button>
 
         <button className={`toolbar-icon-btn ${loading ? "spin" : ""}`} onClick={onRefresh} title="Refresh">
           <svg className="toolbar-refresh-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

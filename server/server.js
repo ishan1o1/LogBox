@@ -6,9 +6,9 @@ const helmet = require("helmet");
 const http = require("http");
 const { Server } = require("socket.io");
 const createLogsIndex = require("./utils/createIndex");
-const rcaRoutes = require("./modules/rca/rca.routes");
 const authRoutes = require("./src/auth/auth.routes");
 const apiKeyRoutes = require("./src/routes/apikeys.routes");
+const projectRoutes = require("./src/routes/projects.routes");
 const userRoutes = require("./src/routes/users.routes");
 const dlqRoutes = require("./src/routes/dlq.routes");
 const metricsRoutes = require("./src/routes/metrics.routes");
@@ -17,7 +17,10 @@ const authenticateApiKey = require("./src/middleware/authenticateApiKey");
 const authorizeRoles = require("./src/middleware/authorizeRoles");
 const { apiRateLimiter, logIngestRateLimiter } = require("./src/middleware/rateLimiters");
 const { notFound, errorHandler } = require("./src/middleware/errorHandler");
-const { ROLES } = require("./src/models/User");
+const User = require("./src/models/User");
+const { ROLES } = User;
+const { verifyAccessToken } = require("./src/auth/jwt.service");
+const { buildTenantLogQuery } = require("./src/utils/tenantQuery");
 const client = require("./config/elasticsearch");
 const {
   LOG_QUEUE_KEY,
@@ -49,14 +52,73 @@ const io = new Server(server, {
   cors: corsOptions,
 });
 
+function emitLogToRooms(ioInstance, logPayload) {
+  if (!ioInstance || !logPayload) return;
+
+  const orgId = logPayload.organizationId
+    ? (logPayload.organizationId._id ? logPayload.organizationId._id.toString() : logPayload.organizationId.toString())
+    : null;
+
+  const projId = logPayload.projectId
+    ? (logPayload.projectId._id ? logPayload.projectId._id.toString() : logPayload.projectId.toString())
+    : null;
+
+  if (orgId) {
+    ioInstance.to(`organization:${orgId}`).emit("new-log", logPayload);
+  }
+  if (projId) {
+    ioInstance.to(`project:${projId}`).emit("new-log", logPayload);
+  }
+}
+
+io.use(async (socket, next) => {
+  try {
+    const token =
+      socket.handshake.auth?.token ||
+      socket.handshake.headers?.authorization?.replace(/^Bearer\s+/i, "") ||
+      socket.handshake.query?.token;
+
+    if (!token) {
+      return next(new Error("Authentication token required"));
+    }
+
+    const payload = verifyAccessToken(token);
+    if (payload.type !== "access") {
+      return next(new Error("Invalid access token"));
+    }
+
+    const user = await User.findById(payload.sub);
+    if (!user || user.disabled) {
+      return next(new Error("User unauthorized or disabled"));
+    }
+
+    const orgId = user.organization
+      ? (user.organization._id ? user.organization._id.toString() : user.organization.toString())
+      : (payload.organizationId || null);
+
+    const assignedProjects = Array.isArray(user.assignedProjects)
+      ? user.assignedProjects.map((p) => (p._id ? p._id.toString() : p.toString()))
+      : [];
+
+    socket.user = user;
+    socket.organizationId = orgId;
+    socket.userRole = user.role;
+    socket.assignedProjects = assignedProjects;
+
+    next();
+  } catch (err) {
+    next(new Error("Authentication failed: " + err.message));
+  }
+});
+
 app.set("io", io);
 app.use(helmet());
 app.use(cors(corsOptions));
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "1mb" }));
 app.use("/auth", authRoutes);
 app.use("/apikeys", apiKeyRoutes);
+app.use("/projects", projectRoutes);
 app.use("/users", userRoutes);
-app.use("/rca", apiRateLimiter, authenticateJWT, authorizeRoles(ROLES.ADMIN, ROLES.DEVELOPER), rcaRoutes);
 
 // ── Dead Letter Queue — list/view: ADMIN+DEV, replay/delete: ADMIN only (enforced in dlq.routes)
 app.use("/dlq", apiRateLimiter, authenticateJWT, authorizeRoles(ROLES.ADMIN, ROLES.DEVELOPER), dlqRoutes);
@@ -154,17 +216,33 @@ function normalizeLog(hit) {
   };
 }
 
-function normalizeIncomingLog(log) {
+function normalizeIncomingLog(log, serviceContext) {
   const meta = (log.meta && typeof log.meta === "object") ? log.meta : {};
   const timestamp = log.timestamp || new Date().toISOString();
 
+  // Strip client-supplied tenant fields to prevent client spoofing
+  const { organizationId, projectId, projectName, ...cleanLog } = log;
+
+  const orgId = serviceContext?.organization
+    ? (serviceContext.organization._id ? serviceContext.organization._id.toString() : serviceContext.organization.toString())
+    : null;
+
+  const projId = serviceContext?.project
+    ? (serviceContext.project._id ? serviceContext.project._id.toString() : serviceContext.project.toString())
+    : null;
+
+  const projName = serviceContext?.project?.name || serviceContext?.serviceName || "general";
+
   return {
-    ...log,
+    ...cleanLog,
     _receivedAt: Date.now(),
     timestamp,
     level: String(log.level || "INFO").toUpperCase(),
     message: log.message || "",
-    service: log.service || "general",
+    service: log.service || projName,
+    organizationId: orgId,
+    projectId: projId,
+    projectName: projName,
     route: meta.route ?? log.route ?? null,
     method: meta.method ?? log.method ?? null,
     endpoint: meta.endpoint ?? log.endpoint ?? null,
@@ -336,7 +414,7 @@ app.post(
   try {
     const incoming = req.body;
     const logs = Array.isArray(incoming) ? incoming : [incoming];
-    const normalizedLogs = logs.map(normalizeIncomingLog);
+    const normalizedLogs = logs.map((log) => normalizeIncomingLog(log, req.service));
 
     await connectRedisClient(redisQueueClient);
     await Promise.all(
@@ -356,7 +434,7 @@ app.post(
     normalizedLogs.forEach((normalizedLog) => {
       const emittedAt = Date.now();
       const payload = { ...normalizedLog, _queuedAt: emittedAt, _emittedAt: emittedAt };
-      req.app.get("io").emit("new-log", payload);
+      emitLogToRooms(req.app.get("io"), payload);
     });
 
     res.status(200).json({ status: "queued", count: normalizedLogs.length });
@@ -448,6 +526,8 @@ app.get(
       must.push({ range: { timestamp: range } });
     }
 
+    const tenantMust = buildTenantLogQuery(req, must);
+
     const from = (parsePositiveInt(page, 1, 100000) - 1) * parsePositiveInt(limit, 100, 1000);
     const size = parsePositiveInt(limit, 100, 1000);
 
@@ -456,7 +536,7 @@ app.get(
       from,
       size,
       sort: [{ timestamp: { order: "desc" } }],
-      query: must.length > 0 ? { bool: { must } } : { match_all: {} },
+      query: { bool: { must: tenantMust } },
     });
 
     const logs = result.hits.hits.map((hit) => ({
@@ -488,12 +568,14 @@ app.get(
       must.push({ range: { timestamp: range } });
     }
 
+    const tenantMust = buildTenantLogQuery(req, must);
+
     const result = await client.search({
       index: READ_LOGS_INDICES,
       size,
       sort: [{ timestamp: { order: "asc" } }],
-      _source: ["timestamp", "level", "service", "route", "endpoint", "method", "statusCode", "responseTime", "message"],
-      query: must.length ? { bool: { must } } : { match_all: {} },
+      _source: ["timestamp", "level", "service", "route", "endpoint", "method", "statusCode", "responseTime", "message", "organizationId", "projectId"],
+      query: { bool: { must: tenantMust } },
     });
 
     const logs = result.hits.hits.map(normalizeLog);
@@ -508,7 +590,31 @@ app.use(notFound);
 app.use(errorHandler);
 
 io.on("connection", (socket) => {
-  console.log("Client connected:", socket.id);
+  console.log(
+    `[Socket.IO] Client connected: ${socket.id} (user: ${socket.user?.name}, role: ${socket.userRole}, org: ${socket.organizationId})`
+  );
+
+  if (socket.organizationId) {
+    socket.join(`organization:${socket.organizationId}`);
+  }
+
+  if (Array.isArray(socket.assignedProjects)) {
+    socket.assignedProjects.forEach((projId) => {
+      socket.join(`project:${projId}`);
+    });
+  }
+
+  socket.on("join-project", (projectId) => {
+    if (!projectId) return;
+    const pId = String(projectId);
+    if (socket.userRole === ROLES.ADMIN || socket.assignedProjects.includes(pId)) {
+      socket.join(`project:${pId}`);
+    }
+  });
+
+  socket.on("leave-project", (projectId) => {
+    if (projectId) socket.leave(`project:${String(projectId)}`);
+  });
 });
 
 // ─── ES tail-poll: watch for new docs written directly by Filebeat ──────────
@@ -561,7 +667,7 @@ async function pollESForNewLogs() {
           _esQueryLatencyMs: queryLatencyMs,
         };
 
-        io.emit("new-log", payload);
+        emitLogToRooms(io, payload);
       });
     }
   } catch (err) {

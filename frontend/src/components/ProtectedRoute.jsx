@@ -17,6 +17,13 @@ function ProtectedRoute({ children, allowedRoles }) {
   const { user } = useContext(AuthContext);
   const token = getAccessToken();
 
+  console.log({
+  token,
+  user,
+  role: user?.role,
+  allowedRoles,
+});
+console.log("ProtectedRoute Render");
   // Not authenticated — no token or no user in context
   if (!token || !user) {
     return <Navigate to="/login" replace />;

@@ -62,10 +62,23 @@ async function refreshAccessToken() {
 }
 
 async function authFetch(url, options = {}) {
+  console.log("➡️ Request:", url);
+
   let response = await fetch(url, withAuthHeaders(options));
 
-  if (response.status === 401 && (await refreshAccessToken())) {
-    response = await fetch(url, withAuthHeaders(options));
+  console.log("⬅️ Response:", url, response.status);
+
+  if (response.status === 401) {
+    console.log("🔄 Access token expired. Trying refresh...");
+
+    const refreshed = await refreshAccessToken();
+
+    console.log("🔄 Refresh result:", refreshed);
+
+    if (refreshed) {
+      response = await fetch(url, withAuthHeaders(options));
+      console.log("⬅️ Retry:", response.status);
+    }
   }
 
   return response;

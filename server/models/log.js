@@ -6,6 +6,20 @@ const LogSchema = new mongoose.Schema({
     required: true,
     trim: true,
   },
+  organizationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Organization",
+    index: true,
+  },
+  projectId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Project",
+    index: true,
+  },
+  projectName: {
+    type: String,
+    trim: true,
+  },
   level: {
     type: String,
     enum: ["INFO", "WARN", "ERROR", "DEBUG"],
@@ -26,9 +40,10 @@ const LogSchema = new mongoose.Schema({
   },
 });
 
-// Indexes (IMPORTANT for performance)
-LogSchema.index({ level: 1 , service: 1});
-LogSchema.index({timestamp:-1 });
+// Indexes (IMPORTANT for multi-tenant query performance)
+LogSchema.index({ organizationId: 1, projectId: 1, timestamp: -1 });
+LogSchema.index({ level: 1, service: 1 });
+LogSchema.index({ timestamp: -1 });
 LogSchema.index({ message: "text" });
 
 module.exports = mongoose.model("Log", LogSchema);
